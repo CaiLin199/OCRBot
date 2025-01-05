@@ -2,7 +2,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 import requests
 import logging
-from config import TG_BOT_TOKEN, API_ID, API_HASH, OWNER_ID
+from config import TELEGRAM_TOKEN, API_ID, API_HASH, OWNER_ID
 from bot import Bot
 
 logging.basicConfig(level=logging.INFO)
