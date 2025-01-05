@@ -9,14 +9,14 @@ from datetime import datetime
 import pyrogram.utils
 pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
 
-from config import API_HASH, APP_ID, LOGGER, TELEGRAM_TOKEN, TG_BOT_WORKERS, CHANNEL_ID, PORT
+from config import API_HASH, API_ID, LOGGER, TELEGRAM_TOKEN, TG_BOT_WORKERS, CHANNEL_ID, PORT
 
 class Bot(Client):
     def __init__(self):
         super().__init__(
             name="Bot",
             api_hash=API_HASH,
-            api_id=APP_ID,
+            api_id=API_ID,
             plugins={
                 "root": "plugins"
             },
