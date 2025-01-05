@@ -3,7 +3,7 @@ import asyncio
 import logging
 from bot import Bot
 from pyrogram import Client, filters
-from config import OWNER_ID, DB_URI, DB_NAME, RSS_URL, CHECK_INTERVAL, CHANNEL_ID
+from config import OWNER_ID, DB_URI, DB_NAME, RSS_URL2, CHECK_INTERVAL, CHANNEL_ID
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # MongoDB Setup
@@ -25,8 +25,8 @@ async def fetch_and_send_rss(client: Client):
     logger.info("Starting RSS feed monitoring...")
     while rss_event.is_set():
         try:
-            logger.info("Fetching RSS feed from %s", RSS_URL)
-            feed = feedparser.parse(RSS_URL)
+            logger.info("Fetching RSS feed from %s", RSS_URL2)
+            feed = feedparser.parse(RSS_URL2)
             if feed.entries:
                 new_entries = []
 
@@ -68,7 +68,7 @@ async def fetch_and_send_rss(client: Client):
 
 
 # Start command
-@Bot.on_message(filters.command("start") & filters.user(OWNER_ID))
+@Bot.on_message(filters.command("rss_start") & filters.user(OWNER_ID))
 async def start_rss(client: Client, message):
     if not rss_event.is_set():
         rss_event.set()
@@ -80,7 +80,7 @@ async def start_rss(client: Client, message):
         await message.reply_text("⚠️ RSS feed monitoring is already running.")
 
 # Stop command
-@Bot.on_message(filters.command("stop") & filters.user(OWNER_ID))
+@Bot.on_message(filters.command("rss_stop") & filters.user(OWNER_ID))
 async def stop_rss(client: Client, message):
     if rss_event.is_set():
         rss_event.clear()
