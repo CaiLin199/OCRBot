@@ -4,7 +4,9 @@ kurigram
 pymongo
 pyromod==1.5
 dnspython
-
-
-
-
+pytz
+feedparser
+python-dotenv
+requests
+asyncio
+tqdm
