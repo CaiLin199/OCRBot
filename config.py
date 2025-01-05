@@ -2,7 +2,10 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 
+#news
 RSS_URL = os.environ.get("RSS_URL", "https://myanimelist.net/rss/news.xml")
+#subsplease episode notifi
+RSS_URL2 = os.environ.get("RSS_URL", "https://myanimelist.net/rss/news.xml")
 
 
 #Bot token @Botfather
