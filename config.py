@@ -5,7 +5,7 @@ from logging.handlers import RotatingFileHandler
 #news
 RSS_URL = os.environ.get("RSS_URL", "https://myanimelist.net/rss/news.xml")
 #subsplease episode notifi
-RSS_URL = os.environ.get("RSS_URL","https://subsplease.org/rss/?t&r=sd")
+RSS_URL2 = os.environ.get("RSS_URL2","https://subsplease.org/rss/?t&r=sd")
 CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "60"))
 
 
