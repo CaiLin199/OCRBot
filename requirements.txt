@@ -12,4 +12,4 @@ asyncio
 tqdm
 motor
 
-git+https://github.com/shhimmery/pyrogram.git@dev#egg=pyrogram
+git+https://github.com/seniorsolt/pyrogram.git@dev#egg=pyrogram
