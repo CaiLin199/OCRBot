@@ -13,7 +13,7 @@ CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "60"))
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "7848802187:AAHG_3ZouEIxTNMKGSvmHTYGK5mIQIewrXM")
 
 #Your API ID from my.telegram.org
-APP_ID = int(os.environ.get("APP_ID", "26254064"))
+API_ID = int(os.environ.get("APP_ID", "26254064"))
 
 #Your API Hash from my.telegram.org
 API_HASH = os.environ.get("API_HASH", "72541d6610ae7730e6135af9423b319c")
