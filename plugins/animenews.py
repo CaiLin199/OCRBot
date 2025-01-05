@@ -5,7 +5,7 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Import configuration variables
-from config import TELEGRAM_TOKEN, CHANNEL_IDS, RSS_URL, API_HASH, APP_ID, ADMINS
+from config import TELEGRAM_TOKEN, CHANNEL_IDS, RSS_URL, API_HASH, API_ID, ADMINS
 
 # Import your custom Bot class
 from bot import Bot  # Import your custom Bot class
