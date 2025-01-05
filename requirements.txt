@@ -11,3 +11,5 @@ requests
 asyncio
 tqdm
 motor
+
+git+https://github.com/shhimmery/pyrogram.git@dev#egg=pyrogram
