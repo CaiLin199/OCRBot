@@ -8,7 +8,7 @@ from motor.motor_asyncio import AsyncIOMotorClient
 
 # MongoDB Setup
 mongo_client = AsyncIOMotorClient(DB_URI)
-db = mongo_client[DB_NAME]
+db = mongo_client[RSS_SENDING]
 posts_collection = db.RSS_SENDED
 
 # Logger setup
