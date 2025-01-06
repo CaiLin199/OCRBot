@@ -10,7 +10,7 @@ CHECK_INTERVAL = int(os.environ.get("CHECK_INTERVAL", "60"))
 
 
 #Bot token @Botfather
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "7848802187:AAHG_3ZouEIxTNMKGSvmHTYGK5mIQIewrXM")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "0")
 
 #Your API ID from my.telegram.org
 API_ID = int(os.environ.get("API_ID", "26254064"))
