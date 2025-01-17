@@ -39,27 +39,29 @@ async def set_thumbnail(client, message: Message):
 async def process_video_with_subtitles(client, message: Message):
     """Add subtitles and font to a video."""
     LOGGER.debug("Received /marge command.")
-    await message.reply_text("📥 Please send the video file to process.")
+    
+    # Check if the command is a reply to a video
+    if not message.reply_to_message or not message.reply_to_message.video:
+        await message.reply_text("⚠️ Reply to a video with the /marge command to start processing.")
+        return
 
     try:
-        # Wait for video input
-        video_message = await client.listen(message.chat.id, filters.video, timeout=60)
+        # Download the video
+        video_message = message.reply_to_message
         video_path = os.path.join(UPLOAD_DIR, f"{video_message.video.file_id}.mkv")
         await video_message.download(file_name=video_path)
         LOGGER.info(f"Video downloaded: {video_path}")
-
-        await message.reply_text("✅ Video downloaded. Now send the subtitle file.")
+        await message.reply_text("✅ Video downloaded. Now reply to this message with the subtitle file.")
 
         # Wait for subtitle input
-        subtitle_message = await client.listen(message.chat.id, filters.document, timeout=60)
+        subtitle_message = await client.listen(message.chat.id, filters.reply & filters.document, timeout=60)
         subtitle_path = os.path.join(UPLOAD_DIR, subtitle_message.document.file_name)
         await subtitle_message.download(file_name=subtitle_path)
         LOGGER.info(f"Subtitle downloaded: {subtitle_path}")
-
-        await message.reply_text("✅ Subtitle downloaded. Now send the font file.")
+        await message.reply_text("✅ Subtitle downloaded. Now reply to this message with the font file.")
 
         # Wait for font input
-        font_message = await client.listen(message.chat.id, filters.document, timeout=60)
+        font_message = await client.listen(message.chat.id, filters.reply & filters.document, timeout=60)
         font_path = os.path.join(UPLOAD_DIR, font_message.document.file_name)
         await font_message.download(file_name=font_path)
         LOGGER.info(f"Font downloaded: {font_path}")
@@ -111,7 +113,7 @@ async def process_video_with_subtitles(client, message: Message):
 
     except asyncio.TimeoutError:
         LOGGER.error("Timeout waiting for user response.")
-        await message.reply_text("❌ Timeout. Please send the required files faster.")
+        await message.reply_text("❌ Timeout. Please reply with the required files faster.")
     except Exception as e:
         LOGGER.error(f"Error: {str(e)}")
         await message.reply_text(f"❌ Error: {str(e)}")
