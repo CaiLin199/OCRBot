@@ -1,9 +1,16 @@
 FROM python:3.8-slim-buster
+
+# Install FFmpeg
+RUN apt-get update && apt-get install -y ffmpeg && apt-get clean
+
 WORKDIR /app
 
-COPY requirements.txt requirements.txt
-RUN pip3 install -r requirements.txt
+# Copy and install Python dependencies
+COPY requirements.txt .
+RUN pip3 install --no-cache-dir -r requirements.txt
 
+# Copy all project files
 COPY . .
 
-CMD python3 main.py
+# Set the default command to run the bot
+CMD ["python3", "main.py"]
