@@ -11,4 +11,5 @@ asyncio
 tqdm
 motor
 ffmpeg-python
+ffmpeg
 git+https://github.com/seniorsolt/pyrogram.git@dev#egg=pyrogram
