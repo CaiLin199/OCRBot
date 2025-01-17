@@ -13,7 +13,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 thumbnail_path = None
 
 
-@Bot.on_message(filters.command("thumb") & filters.private & filter.user(OWNER_ID))
+@Bot.on_message(filters.command("thumb") & filters.private & filters.user(OWNER_ID))
 async def set_thumbnail(client, message: Message):
     """Set a custom thumbnail for the processed file."""
     global thumbnail_path
@@ -27,7 +27,7 @@ async def set_thumbnail(client, message: Message):
     await message.reply_text("Thumbnail set successfully!")
 
 
-@Bot.on_message(filters.command("marge") & filters.private & filter.user(OWNER_ID))
+@Bot.on_message(filters.command("marge") & filters.private & filters.user(OWNER_ID))
 async def process_video(client, message: Message):
     """Process the video with the given subtitle and font."""
     if not message.reply_to_message or not message.reply_to_message.video:
@@ -113,7 +113,7 @@ async def process_video(client, message: Message):
         thumbnail_path = None
 
 
-@Bot.on_message(filters.command("clearthumb") & filters.private & filter.user(OWNER_ID))
+@Bot.on_message(filters.command("clearthumb") & filters.private & filters.user(OWNER_ID))
 async def clear_thumbnail(client, message: Message):
     """Clear the custom thumbnail."""
     global thumbnail_path
