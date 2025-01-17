@@ -7,6 +7,7 @@ from config import OWNER_ID, DB_URI, DB_NAME, RSS_URL2, CHECK_INTERVAL, CHANNEL_
 from motor.motor_asyncio import AsyncIOMotorClient
 
 # MongoDB Setup
+RSS_SENDING = "RSS_SENDINGS"
 mongo_client = AsyncIOMotorClient(DB_URI)
 db = mongo_client[RSS_SENDING]
 posts_collection = db.RSS_SENDED
