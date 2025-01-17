@@ -39,7 +39,7 @@ async def set_thumbnail(client, message: Message):
 async def process_video_with_subtitles(client, message: Message):
     """Add subtitles and font to a video."""
     LOGGER.debug("Received /marge command.")
-    
+
     # Check if the command is a reply to a video
     if not message.reply_to_message or not message.reply_to_message.video:
         await message.reply_text("⚠️ Reply to a video with the /marge command to start processing.")
@@ -51,20 +51,51 @@ async def process_video_with_subtitles(client, message: Message):
         video_path = os.path.join(UPLOAD_DIR, f"{video_message.video.file_id}.mkv")
         await video_message.download(file_name=video_path)
         LOGGER.info(f"Video downloaded: {video_path}")
-        await message.reply_text("✅ Video downloaded. Now reply to this message with the subtitle file.")
+        await message.reply_text("✅ Video downloaded. Now reply to this message with the subtitle file using the /sub command.")
 
-        # Wait for subtitle input
-        subtitle_message = await client.listen(message.chat.id, filters.reply & filters.document, timeout=60)
+    except Exception as e:
+        LOGGER.error(f"Error: {str(e)}")
+        await message.reply_text(f"❌ Error: {str(e)}")
+
+
+@Bot.on_message(filters.command("sub") & filters.private & filters.user(OWNER_ID))
+async def process_subtitle(client, message: Message):
+    """Handle subtitle file."""
+    LOGGER.debug("Received /sub command.")
+    if not message.reply_to_message or not message.reply_to_message.document:
+        await message.reply_text("⚠️ Reply to the previous message with the subtitle file (.srt/.vtt/.ass).")
+        return
+
+    try:
+        # Download the subtitle file
+        subtitle_message = message.reply_to_message
         subtitle_path = os.path.join(UPLOAD_DIR, subtitle_message.document.file_name)
         await subtitle_message.download(file_name=subtitle_path)
         LOGGER.info(f"Subtitle downloaded: {subtitle_path}")
-        await message.reply_text("✅ Subtitle downloaded. Now reply to this message with the font file.")
+        await message.reply_text("✅ Subtitle downloaded. Now reply to this message with the font file using the /font command.")
 
-        # Wait for font input
-        font_message = await client.listen(message.chat.id, filters.reply & filters.document, timeout=60)
+    except Exception as e:
+        LOGGER.error(f"Error: {str(e)}")
+        await message.reply_text(f"❌ Error: {str(e)}")
+
+
+@Bot.on_message(filters.command("font") & filters.private & filters.user(OWNER_ID))
+async def process_font(client, message: Message):
+    """Handle font file."""
+    LOGGER.debug("Received /font command.")
+    if not message.reply_to_message or not message.reply_to_message.document:
+        await message.reply_text("⚠️ Reply to the previous message with the font file (.ttf/.otf).")
+        return
+
+    try:
+        # Download the font file
+        font_message = message.reply_to_message
         font_path = os.path.join(UPLOAD_DIR, font_message.document.file_name)
         await font_message.download(file_name=font_path)
         LOGGER.info(f"Font downloaded: {font_path}")
+
+        # Process the video with subtitle and font
+        await message.reply_text("⚙️ Processing video with subtitle and font...")
 
         # Prepare output path and run FFmpeg command
         output_path = os.path.join(UPLOAD_DIR, f"output_{video_message.video.file_id}.mkv")
@@ -85,9 +116,8 @@ async def process_video_with_subtitles(client, message: Message):
 
         LOGGER.debug(f"Running ffmpeg command: {' '.join(ffmpeg_command)}")
         process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        await message.reply_text("⚙️ Processing video...")
-
         stdout, stderr = process.communicate()
+
         if process.returncode != 0:
             LOGGER.error(f"FFmpeg error: {stderr.decode()}")
             await message.reply_text(f"❌ Failed to process video. Error: {stderr.decode()}")
@@ -111,9 +141,6 @@ async def process_video_with_subtitles(client, message: Message):
                 caption="🎥 Here's your processed video!"
             )
 
-    except asyncio.TimeoutError:
-        LOGGER.error("Timeout waiting for user response.")
-        await message.reply_text("❌ Timeout. Please reply with the required files faster.")
     except Exception as e:
         LOGGER.error(f"Error: {str(e)}")
         await message.reply_text(f"❌ Error: {str(e)}")
