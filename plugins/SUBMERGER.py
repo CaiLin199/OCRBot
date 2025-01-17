@@ -1,13 +1,14 @@
 import logging
 import os
 import subprocess
+import time
 from bot import Bot
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from config import OWNER_ID
 
 # Set up logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 LOGGER = logging.getLogger(__name__)
 
 # Directory to save files
@@ -22,25 +23,28 @@ thumbnail_path = None
 async def set_thumbnail(client, message: Message):
     """Set a custom thumbnail for the processed file."""
     global thumbnail_path
+    LOGGER.debug("Received /thumb command.")
     if not message.reply_to_message or not message.reply_to_message.photo:
+        LOGGER.error("No photo replied to.")
         return await message.reply_text("⚠️ Reply to an image to set it as a thumbnail.")
 
     # Save the thumbnail
     thumbnail_path = os.path.join(UPLOAD_DIR, "thumbnail.jpg")
     await message.reply_to_message.download(file_name=thumbnail_path)
+    LOGGER.info(f"Thumbnail saved at: {thumbnail_path}")
     await message.reply_text("✅ Thumbnail set successfully!")
 
 
 @Bot.on_message(filters.command("marge") & filters.private & filters.user(OWNER_ID))
 async def process_video_or_document(client, message: Message):
     """Process the video or document with the given subtitle and font."""
-    LOGGER.info("Send the video or document file to process.")
+    LOGGER.debug("Received /marge command.")
     await message.reply_text("📥 Please send the video or document file to be processed.")
-    
+
     # Start listening for video or document file
     file_message = await client.listen(message.chat.id, filters.video | filters.document)
+    LOGGER.debug(f"Received file: {file_message}")
 
-    # Check if it's a video or document and process accordingly
     if file_message.video:
         file_type = "video"
         file_path = os.path.join(UPLOAD_DIR, f"{file_message.video.file_id}.mkv")
@@ -50,8 +54,13 @@ async def process_video_or_document(client, message: Message):
         file_path = os.path.join(UPLOAD_DIR, f"{file_message.document.file_id}.pdf")
         await message.reply_text(f"Downloading document: {file_message.document.file_name}...")
     else:
+        LOGGER.error("Unsupported file type received.")
         await message.reply_text("⚠️ Unsupported file type. Please send a video or document.")
         return
+
+    # Delay to prevent overload
+    LOGGER.debug("Waiting for 3 seconds before starting download...")
+    await asyncio.sleep(3)
 
     try:
         # Download the file and log progress
@@ -107,13 +116,14 @@ async def process_video_or_document(client, message: Message):
                 output_path
             ]
 
+        LOGGER.debug(f"Running ffmpeg command: {' '.join(ffmpeg_command)}")
         # Run ffmpeg and capture stdout/stderr
         process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 
         LOGGER.info("Processing started...")
 
         for line in process.stdout:
-            LOGGER.info(f"ffmpeg stdout: {line.strip()}")
+            LOGGER.debug(f"ffmpeg stdout: {line.strip()}")
             if "frame=" in line or "size=" in line:
                 await message.edit_text(f"Processing: {line.strip()}")
 
@@ -126,6 +136,7 @@ async def process_video_or_document(client, message: Message):
             process.wait()
 
         if process.returncode == 0:
+            LOGGER.info(f"✅ Processing complete! Output path: {output_path}")
             caption = "🎥 Here's your processed file!"
             if thumbnail_path:
                 await client.send_document(
@@ -140,30 +151,33 @@ async def process_video_or_document(client, message: Message):
                     document=output_path,
                     caption=caption,
                 )
-            LOGGER.info("✅ Processing complete!")
         else:
             LOGGER.error(f"❌ Processing failed with return code {process.returncode}.")
+            await message.reply_text(f"❌ Processing failed with error code {process.returncode}.")
 
     except Exception as e:
         LOGGER.error(f"Error during processing: {str(e)}")
         await message.reply_text(f"❌ Error during processing: {str(e)}")
 
     # Cleanup
-    if os.path.exists(file_path):
-        os.remove(file_path)
-    if os.path.exists(subtitle_path):
-        os.remove(subtitle_path)
-    if os.path.exists(font_path):
-        os.remove(font_path)
-    if os.path.exists(output_path):
-        os.remove(output_path)
-    if thumbnail_path and os.path.exists(thumbnail_path):
-        os.remove(thumbnail_path)
-        thumbnail_path = None
+    try:
+        if os.path.exists(file_path):
+            os.remove(file_path)
+        if os.path.exists(subtitle_path):
+            os.remove(subtitle_path)
+        if os.path.exists(font_path):
+            os.remove(font_path)
+        if os.path.exists(output_path):
+            os.remove(output_path)
+        if thumbnail_path and os.path.exists(thumbnail_path):
+            os.remove(thumbnail_path)
+            thumbnail_path = None
+    except Exception as cleanup_error:
+        LOGGER.error(f"Cleanup error: {str(cleanup_error)}")
 
 
 def log_progress(current, total, message):
     """Logs download progress and sends updates to the user."""
     percent = (current / total) * 100
-    LOGGER.info(f"Download progress: {percent:.2f}%")
+    LOGGER.debug(f"Download progress: {percent:.2f}%")
     message.edit_text(f"📥 Downloading: {percent:.2f}% completed.")
