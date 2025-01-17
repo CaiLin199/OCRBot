@@ -1,5 +1,6 @@
 import os
 import subprocess
+from bot import Bot
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from config import OWNER_ID
