@@ -1,10 +1,13 @@
+import logging
 import os
 import subprocess
-from bot import Bot
 from pyrogram import Client, filters
 from pyrogram.types import Message
-from config import OWNER_ID, LOGGER
+from config import OWNER_ID
 
+# Set up logging
+logging.basicConfig(level=logging.INFO)
+LOGGER = logging.getLogger(__name__)
 
 # Directory to save files
 UPLOAD_DIR = "./uploads"
@@ -14,7 +17,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 thumbnail_path = None
 
 
-@Bot.on_message(filters.command("thumb") & filters.private & filters.user(OWNER_ID))
+@Client.on_message(filters.command("thumb") & filters.private & filters.user(OWNER_ID))
 async def set_thumbnail(client, message: Message):
     """Set a custom thumbnail for the processed file."""
     global thumbnail_path
@@ -27,7 +30,7 @@ async def set_thumbnail(client, message: Message):
     await message.reply_text("✅ Thumbnail set successfully!")
 
 
-@Bot.on_message(filters.command("marge") & filters.private & filters.user(OWNER_ID))
+@Client.on_message(filters.command("marge") & filters.private & filters.user(OWNER_ID))
 async def process_video_or_document(client, message: Message):
     """Process the video or document with the given subtitle and font."""
     LOGGER.info("Send the video or document file to process.")
@@ -111,7 +114,7 @@ async def process_video_or_document(client, message: Message):
         for line in process.stdout:
             LOGGER.info(f"ffmpeg stdout: {line.strip()}")
             if "frame=" in line or "size=" in line:
-                await message.reply_text(f"Processing: {line.strip()}")
+                await message.edit_text(f"Processing: {line.strip()}")
 
         # Capture and log errors from stderr
         stderr_output, _ = process.communicate()
@@ -156,18 +159,6 @@ async def process_video_or_document(client, message: Message):
     if thumbnail_path and os.path.exists(thumbnail_path):
         os.remove(thumbnail_path)
         thumbnail_path = None
-
-
-@Bot.on_message(filters.command("clearthumb") & filters.private & filters.user(OWNER_ID))
-async def clear_thumbnail(client, message: Message):
-    """Clear the custom thumbnail."""
-    global thumbnail_path
-    if thumbnail_path and os.path.exists(thumbnail_path):
-        os.remove(thumbnail_path)
-        thumbnail_path = None
-        await message.reply_text("✅ Thumbnail cleared successfully.")
-    else:
-        await message.reply_text("⚠️ No thumbnail to clear.")
 
 
 def log_progress(current, total, message):
