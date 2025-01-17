@@ -1,6 +1,7 @@
 import logging
 import os
 import subprocess
+from bot import Bot
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from config import OWNER_ID
@@ -17,7 +18,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 thumbnail_path = None
 
 
-@Client.on_message(filters.command("thumb") & filters.private & filters.user(OWNER_ID))
+@Bot.on_message(filters.command("thumb") & filters.private & filters.user(OWNER_ID))
 async def set_thumbnail(client, message: Message):
     """Set a custom thumbnail for the processed file."""
     global thumbnail_path
@@ -30,7 +31,7 @@ async def set_thumbnail(client, message: Message):
     await message.reply_text("✅ Thumbnail set successfully!")
 
 
-@Client.on_message(filters.command("marge") & filters.private & filters.user(OWNER_ID))
+@Bot.on_message(filters.command("marge") & filters.private & filters.user(OWNER_ID))
 async def process_video_or_document(client, message: Message):
     """Process the video or document with the given subtitle and font."""
     LOGGER.info("Send the video or document file to process.")
