@@ -1,7 +1,6 @@
 import logging
 import os
 import subprocess
-import asyncio
 from bot import Bot
 from pyrogram import Client, filters
 from pyrogram.types import Message
@@ -16,21 +15,25 @@ LOGGER = logging.getLogger(__name__)
 UPLOAD_DIR = "./uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
-# Variable to store the thumbnail path
-thumbnail_path = None
+# Global variables to store file paths
+global_paths = {
+    "thumbnail_path": None,
+    "video_path": None,
+    "subtitle_path": None,
+    "font_path": None
+}
 
 
 @Bot.on_message(filters.command("thumb") & filters.private & filters.user(OWNER_ID))
 async def set_thumbnail(client, message: Message):
     """Set a custom thumbnail for the processed file."""
-    global thumbnail_path
-    LOGGER.debug("Received /thumb command.")
     if not message.reply_to_message or not message.reply_to_message.photo:
         await message.reply_text("⚠️ Reply to an image to set it as a thumbnail.")
         return
 
     thumbnail_path = os.path.join(UPLOAD_DIR, "thumbnail.jpg")
     await message.reply_to_message.download(file_name=thumbnail_path)
+    global_paths["thumbnail_path"] = thumbnail_path
     LOGGER.info(f"Thumbnail saved at: {thumbnail_path}")
     await message.reply_text("✅ Thumbnail set successfully!")
 
@@ -38,9 +41,6 @@ async def set_thumbnail(client, message: Message):
 @Bot.on_message(filters.command("marge") & filters.private & filters.user(OWNER_ID))
 async def process_video_with_subtitles(client, message: Message):
     """Add subtitles and font to a video."""
-    LOGGER.debug("Received /marge command.")
-
-    # Check if the command is a reply to a video
     if not message.reply_to_message or not message.reply_to_message.video:
         await message.reply_text("⚠️ Reply to a video with the /marge command to start processing.")
         return
@@ -50,6 +50,7 @@ async def process_video_with_subtitles(client, message: Message):
         video_message = message.reply_to_message
         video_path = os.path.join(UPLOAD_DIR, f"{video_message.video.file_id}.mkv")
         await video_message.download(file_name=video_path)
+        global_paths["video_path"] = video_path
         LOGGER.info(f"Video downloaded: {video_path}")
         await message.reply_text("✅ Video downloaded. Now reply to this message with the subtitle file using the /sub command.")
 
@@ -61,7 +62,6 @@ async def process_video_with_subtitles(client, message: Message):
 @Bot.on_message(filters.command("sub") & filters.private & filters.user(OWNER_ID))
 async def process_subtitle(client, message: Message):
     """Handle subtitle file."""
-    LOGGER.debug("Received /sub command.")
     if not message.reply_to_message or not message.reply_to_message.document:
         await message.reply_text("⚠️ Reply to the previous message with the subtitle file (.srt/.vtt/.ass).")
         return
@@ -71,6 +71,7 @@ async def process_subtitle(client, message: Message):
         subtitle_message = message.reply_to_message
         subtitle_path = os.path.join(UPLOAD_DIR, subtitle_message.document.file_name)
         await subtitle_message.download(file_name=subtitle_path)
+        global_paths["subtitle_path"] = subtitle_path
         LOGGER.info(f"Subtitle downloaded: {subtitle_path}")
         await message.reply_text("✅ Subtitle downloaded. Now reply to this message with the font file using the /font command.")
 
@@ -82,7 +83,6 @@ async def process_subtitle(client, message: Message):
 @Bot.on_message(filters.command("font") & filters.private & filters.user(OWNER_ID))
 async def process_font(client, message: Message):
     """Handle font file."""
-    LOGGER.debug("Received /font command.")
     if not message.reply_to_message or not message.reply_to_message.document:
         await message.reply_text("⚠️ Reply to the previous message with the font file (.ttf/.otf).")
         return
@@ -92,13 +92,20 @@ async def process_font(client, message: Message):
         font_message = message.reply_to_message
         font_path = os.path.join(UPLOAD_DIR, font_message.document.file_name)
         await font_message.download(file_name=font_path)
+        global_paths["font_path"] = font_path
         LOGGER.info(f"Font downloaded: {font_path}")
+
+        # Validate that required files exist
+        video_path = global_paths.get("video_path")
+        subtitle_path = global_paths.get("subtitle_path")
+        thumbnail_path = global_paths.get("thumbnail_path")
+        if not video_path or not subtitle_path:
+            await message.reply_text("⚠️ Missing video or subtitle file. Ensure you've replied with both before processing.")
+            return
 
         # Process the video with subtitle and font
         await message.reply_text("⚙️ Processing video with subtitle and font...")
-
-        # Prepare output path and run FFmpeg command
-        output_path = os.path.join(UPLOAD_DIR, f"output_{video_message.video.file_id}.mkv")
+        output_path = os.path.join(UPLOAD_DIR, f"output_{os.path.basename(video_path)}")
         ffmpeg_command = [
             "ffmpeg",
             "-i", video_path,
@@ -146,7 +153,7 @@ async def process_font(client, message: Message):
         await message.reply_text(f"❌ Error: {str(e)}")
     finally:
         # Clean up
-        for path in [video_path, subtitle_path, font_path, output_path, thumbnail_path]:
+        for path in global_paths.values():
             if path and os.path.exists(path):
                 os.remove(path)
                 LOGGER.info(f"Deleted file: {path}")
