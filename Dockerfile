@@ -1,7 +1,10 @@
 FROM python:3.8-slim-buster
 
-# Install FFmpeg
-RUN apt-get update && apt-get install -y ffmpeg && apt-get clean
+# Install system dependencies (including FFmpeg and Git)
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    git \
+    && apt-get clean
 
 WORKDIR /app
 
