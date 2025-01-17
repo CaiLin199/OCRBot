@@ -1,9 +1,9 @@
 import os
 import subprocess
-from bot import Bot
-from config import OWNER_ID
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from config import OWNER_ID
+
 
 # Directory to save files
 UPLOAD_DIR = "./uploads"
@@ -18,40 +18,39 @@ async def set_thumbnail(client, message: Message):
     """Set a custom thumbnail for the processed file."""
     global thumbnail_path
     if not message.reply_to_message or not message.reply_to_message.photo:
-        
-        return
+        return await message.reply_text("Reply to an image to set it as a thumbnail.")
 
     # Save the thumbnail
     thumbnail_path = os.path.join(UPLOAD_DIR, "thumbnail.jpg")
     await message.reply_to_message.download(file_name=thumbnail_path)
-    await message.reply_text("Thumbnail set successfully!")
+    await message.reply_text("✅ Thumbnail set successfully!")
 
 
 @Bot.on_message(filters.command("marge") & filters.private & filters.user(OWNER_ID))
 async def process_video(client, message: Message):
     """Process the video with the given subtitle and font."""
     if not message.reply_to_message or not message.reply_to_message.video:
-        
-        return
+        return await message.reply_text("Reply to a video to process it.")
 
     # Download the video file
     video = message.reply_to_message.video
     video_path = os.path.join(UPLOAD_DIR, f"{video.file_id}.mkv")
     await message.reply_to_message.download(file_name=video_path)
-    await message.reply_text(f"Video downloaded: `{video_path}`")
+    await message.reply_text(f"📥 Video downloaded: `{video_path}`")
 
-    # Expecting subtitle and font files to be sent in separate messages
-    subtitle_message = await app.listen(message.chat.id, filters=document)
-    subtitle = subtitle_message.document
-    subtitle_path = os.path.join(UPLOAD_DIR, subtitle.file_name)
+    # Wait for subtitle file
+    await message.reply_text("Now send the subtitle file...")
+    subtitle_message = await client.listen(message.chat.id, filters=document)
+    subtitle_path = os.path.join(UPLOAD_DIR, subtitle_message.document.file_name)
     await subtitle_message.download(file_name=subtitle_path)
-    await message.reply_text(f"Subtitle downloaded: `{subtitle_path}`")
+    await message.reply_text(f"📥 Subtitle downloaded: `{subtitle_path}`")
 
-    font_message = await app.listen(message.chat.id, filters=document)
-    font = font_message.document
-    font_path = os.path.join(UPLOAD_DIR, font.file_name)
+    # Wait for font file
+    await message.reply_text("Finally, send the font file...")
+    font_message = await client.listen(message.chat.id, filters=document)
+    font_path = os.path.join(UPLOAD_DIR, font_message.document.file_name)
     await font_message.download(file_name=font_path)
-    await message.reply_text(f"Font downloaded: `{font_path}`")
+    await message.reply_text(f"📥 Font downloaded: `{font_path}`")
 
     # Prepare the ffmpeg command
     output_path = os.path.join(UPLOAD_DIR, f"output_{video.file_id}.mkv")
@@ -70,38 +69,34 @@ async def process_video(client, message: Message):
         output_path
     ]
 
-    # Run ffmpeg and capture the output
+    # Run ffmpeg
     process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=True)
     await message.reply_text("Processing started...")
 
-    progress_message = await message.reply_text("Progress: 0%")
-    try:
-        for line in process.stdout:
-            # Parse progress from ffmpeg output
-            if "frame=" in line or "size=" in line:
-                await progress_message.edit_text(f"Processing: {line.strip()}")
-        
-        process.wait()
-    except Exception as e:
-        await message.reply_text(f"Error occurred: {e}")
-        return
+    for line in process.stdout:
+        if "frame=" in line or "size=" in line:
+            await message.reply_text(f"Processing: {line.strip()}")
+
+    process.wait()
 
     if process.returncode == 0:
-        # Send the processed file back to the user
-        caption = ""
+        caption = "🎥 Here's your processed video!"
         if thumbnail_path:
-            await app.send_document(
+            await client.send_document(
                 chat_id=message.chat.id,
                 document=output_path,
                 thumb=thumbnail_path,
-                caption=caption
+                caption=caption,
             )
         else:
-            await app.send_document(chat_id=message.chat.id, document=output_path, caption=caption)
-
-        await message.reply_text("Processing complete!")
+            await client.send_document(
+                chat_id=message.chat.id,
+                document=output_path,
+                caption=caption,
+            )
+        await message.reply_text("✅ Processing complete!")
     else:
-        await message.reply_text("Processing failed.")
+        await message.reply_text("❌ Processing failed.")
 
     # Cleanup
     os.remove(video_path)
@@ -120,7 +115,6 @@ async def clear_thumbnail(client, message: Message):
     if thumbnail_path and os.path.exists(thumbnail_path):
         os.remove(thumbnail_path)
         thumbnail_path = None
-        await message.reply_text("Thumbnail cleared successfully.")
+        await message.reply_text("✅ Thumbnail cleared successfully.")
     else:
-        await message.reply_text("No thumbnail to clear.")
-
+        await message.reply_text("⚠️ No thumbnail to clear.")
