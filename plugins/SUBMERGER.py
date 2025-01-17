@@ -1,10 +1,11 @@
 import logging
 import os
-from bot import Bot
 import subprocess
 import asyncio
+from bot import Bot
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from pyromod.listen import listen
 from config import OWNER_ID
 
 # Set up logging
@@ -17,6 +18,7 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Variable to store the thumbnail path
 thumbnail_path = None
+
 
 @Bot.on_message(filters.command("thumb") & filters.private & filters.user(OWNER_ID))
 async def set_thumbnail(client, message: Message):
@@ -47,7 +49,7 @@ async def process_video_with_subtitles(client, message: Message):
         LOGGER.info(f"Video downloaded: {video_path}")
 
         await message.reply_text("✅ Video downloaded. Now send the subtitle file.")
-        
+
         # Wait for subtitle input
         subtitle_message = await client.listen(message.chat.id, filters.document, timeout=60)
         subtitle_path = os.path.join(UPLOAD_DIR, subtitle_message.document.file_name)
