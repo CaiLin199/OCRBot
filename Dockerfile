@@ -1,6 +1,5 @@
-FROM python:3.8-slim-buster
+FROM python:3.8-slim-buster AS build
 
-# Install system dependencies (including FFmpeg and Git)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     git \
@@ -9,12 +8,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy and install Python dependencies
 COPY requirements.txt .
 RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Copy all project files
+# Final stage
+FROM python:3.8-slim-buster
+
+WORKDIR /app
+COPY --from=build /usr/local/lib/python3.8/site-packages /usr/local/lib/python3.8/site-packages
 COPY . .
 
-# Set the default command to run the bot
 CMD ["python3", "main.py"]
