@@ -1,159 +1,89 @@
-import logging
+from pyrogram import Client, filters
 import os
 import subprocess
 from bot import Bot
-from pyrogram import Client, filters
-from pyrogram.types import Message
-from pyromod.listen import listen
-from config import OWNER_ID
 
-# Set up logging
-logging.basicConfig(level=logging.DEBUG)
-LOGGER = logging.getLogger(__name__)
+# Temporary storage for user file paths
+user_data = {}
 
-# Directory to save files
-UPLOAD_DIR = "./uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+@Bot.on_message(filters.video | filters.document)
+async def handle_video(client, message):
+    if message.video or (message.document and message.document.file_name.endswith((".mkv", ".mp4"))):
+        video_file = await message.download()
+        user_id = message.from_user.id
 
-# Global variables to store file paths
-global_paths = {
-    "thumbnail_path": None,
-    "video_path": None,
-    "subtitle_path": None,
-    "font_path": None
-}
+        # Store the video file path
+        user_data[user_id] = {"video": video_file}
+        await message.reply("Video received! Please send the subtitle file (.ass or .srt).")
+    else:
+        await message.reply("Please send a valid video file (MKV or MP4).")
 
-
-@Bot.on_message(filters.command("thumb") & filters.private & filters.user(OWNER_ID))
-async def set_thumbnail(client, message: Message):
-    """Set a custom thumbnail for the processed file."""
-    if not message.reply_to_message or not message.reply_to_message.photo:
-        await message.reply_text("⚠️ Reply to an image to set it as a thumbnail.")
-        return
-
-    thumbnail_path = os.path.join(UPLOAD_DIR, "thumbnail.jpg")
-    await message.reply_to_message.download(file_name=thumbnail_path)
-    global_paths["thumbnail_path"] = thumbnail_path
-    LOGGER.info(f"Thumbnail saved at: {thumbnail_path}")
-    await message.reply_text("✅ Thumbnail set successfully!")
-
-
-@Bot.on_message(filters.command("marge") & filters.private & filters.user(OWNER_ID))
-async def process_video_with_subtitles(client, message: Message):
-    """Add subtitles and font to a video."""
-    if not message.reply_to_message or not message.reply_to_message.video:
-        await message.reply_text("⚠️ Reply to a video with the /marge command to start processing.")
-        return
-
-    try:
-        # Download the video
-        video_message = message.reply_to_message
-        video_path = os.path.join(UPLOAD_DIR, f"{video_message.video.file_id}.mkv")
-        await video_message.download(file_name=video_path)
-        global_paths["video_path"] = video_path
-        LOGGER.info(f"Video downloaded: {video_path}")
-        await message.reply_text("✅ Video downloaded. Now reply to this message with the subtitle file using the /sub command.")
-
-    except Exception as e:
-        LOGGER.error(f"Error: {str(e)}")
-        await message.reply_text(f"❌ Error: {str(e)}")
-
-
-@Bot.on_message(filters.command("sub") & filters.private & filters.user(OWNER_ID))
-async def process_subtitle(client, message: Message):
-    """Handle subtitle file."""
-    if not message.reply_to_message or not message.reply_to_message.document:
-        await message.reply_text("⚠️ Reply to the previous message with the subtitle file (.srt/.vtt/.ass).")
-        return
-
-    try:
-        # Download the subtitle file
-        subtitle_message = message.reply_to_message
-        subtitle_path = os.path.join(UPLOAD_DIR, subtitle_message.document.file_name)
-        await subtitle_message.download(file_name=subtitle_path)
-        global_paths["subtitle_path"] = subtitle_path
-        LOGGER.info(f"Subtitle downloaded: {subtitle_path}")
-        await message.reply_text("✅ Subtitle downloaded. Now reply to this message with the font file using the /font command.")
-
-    except Exception as e:
-        LOGGER.error(f"Error: {str(e)}")
-        await message.reply_text(f"❌ Error: {str(e)}")
-
-
-@Bot.on_message(filters.command("font") & filters.private & filters.user(OWNER_ID))
-async def process_font(client, message: Message):
-    """Handle font file."""
-    if not message.reply_to_message or not message.reply_to_message.document:
-        await message.reply_text("⚠️ Reply to the previous message with the font file (.ttf/.otf).")
-        return
-
-    try:
-        # Download the font file
-        font_message = message.reply_to_message
-        font_path = os.path.join(UPLOAD_DIR, font_message.document.file_name)
-        await font_message.download(file_name=font_path)
-        global_paths["font_path"] = font_path
-        LOGGER.info(f"Font downloaded: {font_path}")
-
-        # Validate that required files exist
-        video_path = global_paths.get("video_path")
-        subtitle_path = global_paths.get("subtitle_path")
-        thumbnail_path = global_paths.get("thumbnail_path")
-        if not video_path or not subtitle_path:
-            await message.reply_text("⚠️ Missing video or subtitle file. Ensure you've replied with both before processing.")
-            return
-
-        # Process the video with subtitle and font
-        await message.reply_text("⚙️ Processing video with subtitle and font...")
-        output_path = os.path.join(UPLOAD_DIR, f"output_{os.path.basename(video_path)}")
-        ffmpeg_command = [
-            "ffmpeg",
-            "-i", video_path,
-            "-i", subtitle_path,
-            "-attach", font_path,
-            "-metadata:s:t:0", "mimetype=application/x-font-otf",
-            "-map", "0",
-            "-map", "1",
-            "-metadata:s:s:0", "title=HeavenlySubs",
-            "-metadata:s:s:0", "language=eng",
-            "-disposition:s:s:0", "default",
-            "-c", "copy",
-            output_path
-        ]
-
-        LOGGER.debug(f"Running ffmpeg command: {' '.join(ffmpeg_command)}")
-        process = subprocess.Popen(ffmpeg_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = process.communicate()
-
-        if process.returncode != 0:
-            LOGGER.error(f"FFmpeg error: {stderr.decode()}")
-            await message.reply_text(f"❌ Failed to process video. Error: {stderr.decode()}")
-            return
-
-        LOGGER.info(f"Video processed successfully: {output_path}")
-        await message.reply_text("✅ Processing complete! Uploading...")
-
-        # Send the processed video
-        if thumbnail_path:
-            await client.send_document(
-                chat_id=message.chat.id,
-                document=output_path,
-                thumb=thumbnail_path,
-                caption="🎥 Here's your processed video!"
-            )
+@Bot.on_message(filters.document)
+async def handle_subtitle(client, message):
+    user_id = message.from_user.id
+    if user_id in user_data and "video" in user_data:
+        if message.document.file_name.endswith((".ass", ".srt")):
+            subtitle_file = await message.download()
+            user_data[user_id]["subtitle"] = subtitle_file
+            await message.reply("Subtitle received! Please send the font file (.ttf or .otf).")
         else:
-            await client.send_document(
-                chat_id=message.chat.id,
-                document=output_path,
-                caption="🎥 Here's your processed video!"
-            )
+            await message.reply("Please send a valid subtitle file (.ass or .srt).")
+    elif user_id in user_data:
+        await message.reply("You need to send a video file first.")
+    else:
+        await message.reply("Please start by sending a video file.")
 
-    except Exception as e:
-        LOGGER.error(f"Error: {str(e)}")
-        await message.reply_text(f"❌ Error: {str(e)}")
+@Bot.on_message(filters.document)
+async def handle_font(client, message):
+    user_id = message.from_user.id
+    if user_id in user_data and "subtitle" in user_data:
+        if message.document.file_name.endswith((".ttf", ".otf")):
+            font_file = await message.download()
+            user_data[user_id]["font"] = font_file
+
+            # All files are ready, start processing
+            await message.reply("Font file received! Merging subtitles into the video...")
+            await merge_subtitles(client, message, user_id)
+        else:
+            await message.reply("Please send a valid font file (.ttf or .otf).")
+    elif user_id in user_data:
+        await message.reply("You need to send a subtitle file first.")
+    else:
+        await message.reply("Please start by sending a video file.")
+
+async def merge_subtitles(client, message, user_id):
+    data = user_data[user_id]
+    video = data["video"]
+    subtitle = data["subtitle"]
+    font = data.get("font")
+    output_file = f"output_{user_id}.mkv"
+
+    ffmpeg_cmd = [
+        "ffmpeg", "-i", video, "-i", subtitle,
+        "-attach", font, "-metadata:s:t:0", "mimetype=application/x-font-otf",
+        "-map", "0", "-map", "1",
+        "-metadata:s:s:0", "title=HeavenlySubs",
+        "-metadata:s:s:0", "language=eng", "-disposition:s:s:0", "default",
+        "-c", "copy", output_file
+    ]
+
+    try:
+        # Run ffmpeg
+        subprocess.run(ffmpeg_cmd, check=True)
+        await message.reply_video(video=output_file, caption="Here is your video with subtitles!")
+    except subprocess.CalledProcessError as e:
+        await message.reply(f"Failed to merge subtitles: {e}")
     finally:
         # Clean up
-        for path in global_paths.values():
-            if path and os.path.exists(path):
-                os.remove(path)
-                LOGGER.info(f"Deleted file: {path}")
+        os.remove(video)
+        os.remove(subtitle)
+        if font:
+            os.remove(font)
+        if os.path.exists(output_file):
+            os.remove(output_file)
+        user_data.pop(user_id, None)
+
+@Bot.on_message(filters.command("start"))
+async def start(client, message):
+    await message.reply("Send me a video file (MKV or MP4) to start adding subtitles.")
+            
