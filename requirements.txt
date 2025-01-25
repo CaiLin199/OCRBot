@@ -1,15 +1,4 @@
-aiohttp
 TgCrypto
-pymongo
-pyromod==1.5
-dnspython
-pytz
-feedparser
-python-dotenv
-requests
-asyncio
-tqdm
-motor
 ffmpeg-python
 ffmpeg
 git+https://github.com/seniorsolt/pyrogram.git@dev#egg=pyrogram
