@@ -1,8 +1,16 @@
 FROM python:3.8-slim-buster AS build
 
-# Update and install system dependencies, including FFmpeg and Git
+# Install all necessary libraries, including FFmpeg dependencies
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ffmpeg \
+    libavdevice58 \
+    libavfilter7 \
+    libavformat58 \
+    libavcodec58 \
+    libswresample3 \
+    libswscale5 \
+    libpostproc55 \
+    libavutil56 \
     git \
     ca-certificates \
     && apt-get clean \
@@ -17,8 +25,16 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 # Final stage
 FROM python:3.8-slim-buster
 
-# Update and upgrade packages in the final stage
+# Install libraries in the final stage as well
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    libavdevice58 \
+    libavfilter7 \
+    libavformat58 \
+    libavcodec58 \
+    libswresample3 \
+    libswscale5 \
+    libpostproc55 \
+    libavutil56 \
     ca-certificates \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
