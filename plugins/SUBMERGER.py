@@ -51,7 +51,7 @@ async def handle_font(client, message):
     else:
         await message.reply("Please send a subtitle file first.")
 
-@Bot.on_message(filters.user(OWNER_ID) & filters.text & ~filters.command)
+@Bot.on_message(filters.user(OWNER_ID) & filters.text & filters.command)
 async def handle_name_or_caption(client, message):
     user_id = message.from_user.id
 
