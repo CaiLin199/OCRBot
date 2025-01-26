@@ -1,9 +1,10 @@
 FROM python:3.8-slim-buster AS build
 
-# Install system dependencies, including FFmpeg and Git
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Update and install system dependencies, including FFmpeg and Git
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
     ffmpeg \
     git \
+    ca-certificates \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -15,6 +16,12 @@ RUN pip3 install --no-cache-dir -r requirements.txt
 
 # Final stage
 FROM python:3.8-slim-buster
+
+# Update and upgrade packages in the final stage
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy FFmpeg binaries from the build stage
 COPY --from=build /usr/bin/ffmpeg /usr/bin/ffmpeg
