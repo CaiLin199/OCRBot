@@ -6,46 +6,37 @@ from bot import Bot
 # Temporary storage for user file paths
 user_data = {}
 
-@Bot.on_message(filters.video | filters.document)
+@Bot.on_message(filters.video | filters.document & filters.create(lambda _, __, message: message.document and message.document.file_name.endswith((".mkv", ".mp4"))))
 async def handle_video(client, message):
-    if message.video or (message.document and message.document.file_name.endswith((".mkv", ".mp4"))):
-        video_file = await message.download()
-        user_id = message.from_user.id
+    video_file = await message.download()
+    user_id = message.from_user.id
 
-        # Store the video file path
-        user_data[user_id] = {"video": video_file}
-        await message.reply("Video received! Please send the subtitle file (.ass or .srt).")
-    else:
-        await message.reply("Please send a valid video file (MKV or MP4).")
+    # Store the video file path
+    user_data[user_id] = {"video": video_file}
+    await message.reply("Video received! Please send the subtitle file (.ass or .srt).")
 
-@Bot.on_message(filters.document)
+@Bot.on_message(filters.document & filters.create(lambda _, __, message: message.document and message.document.file_name.endswith((".ass", ".srt"))))
 async def handle_subtitle(client, message):
     user_id = message.from_user.id
     if user_id in user_data and "video" in user_data:
-        if message.document.file_name.endswith((".ass", ".srt")):
-            subtitle_file = await message.download()
-            user_data[user_id]["subtitle"] = subtitle_file
-            await message.reply("Subtitle received! Please send the font file (.ttf or .otf).")
-        else:
-            await message.reply("Please send a valid subtitle file (.ass or .srt).")
+        subtitle_file = await message.download()
+        user_data[user_id]["subtitle"] = subtitle_file
+        await message.reply("Subtitle received! Please send the font file (.ttf or .otf).")
     elif user_id in user_data:
         await message.reply("You need to send a video file first.")
     else:
         await message.reply("Please start by sending a video file.")
 
-@Bot.on_message(filters.document)
+@Bot.on_message(filters.document & filters.create(lambda _, __, message: message.document and message.document.file_name.endswith((".ttf", ".otf"))))
 async def handle_font(client, message):
     user_id = message.from_user.id
     if user_id in user_data and "subtitle" in user_data:
-        if message.document.file_name.endswith((".ttf", ".otf")):
-            font_file = await message.download()
-            user_data[user_id]["font"] = font_file
+        font_file = await message.download()
+        user_data[user_id]["font"] = font_file
 
-            # All files are ready, start processing
-            await message.reply("Font file received! Merging subtitles into the video...")
-            await merge_subtitles(client, message, user_id)
-        else:
-            await message.reply("Please send a valid font file (.ttf or .otf).")
+        # All files are ready, start processing
+        await message.reply("Font file received! Merging subtitles into the video...")
+        await merge_subtitles(client, message, user_id)
     elif user_id in user_data:
         await message.reply("You need to send a subtitle file first.")
     else:
@@ -86,4 +77,3 @@ async def merge_subtitles(client, message, user_id):
 @Bot.on_message(filters.command("start"))
 async def start(client, message):
     await message.reply("Send me a video file (MKV or MP4) to start adding subtitles.")
-            
