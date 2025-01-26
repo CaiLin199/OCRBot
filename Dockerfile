@@ -11,6 +11,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     libswscale5 \
     libpostproc55 \
     libavutil56 \
+    libavresample4 \
     git \
     ca-certificates \
     && apt-get clean \
@@ -35,6 +36,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-reco
     libswscale5 \
     libpostproc55 \
     libavutil56 \
+    libavresample4 \
     ca-certificates \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
