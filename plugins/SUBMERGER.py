@@ -1,8 +1,8 @@
-from pyrogram import Client, filters
+from pyrogram import filters
 import os
 import subprocess
-from bot import Bot
-from config import OWNER_ID  # Make sure OWNER_ID is defined in your config.py
+from bot import Bot  # Assuming Bot is a properly initialized Pyrogram Client in bot.py
+from config import OWNER_ID  # OWNER_ID should be defined in config.py
 
 # Temporary storage for user progress and file paths
 user_data = {}
@@ -51,15 +51,15 @@ async def handle_font(client, message):
     else:
         await message.reply("Please send a subtitle file first.")
 
-@Bot.on_message(filters.user(OWNER_ID) & filters.text & filters.command)
+@Bot.on_message(filters.user(OWNER_ID) & filters.text)
 async def handle_name_or_caption(client, message):
     user_id = message.from_user.id
 
     if user_id in user_data:
         step = user_data[user_id].get("step")
         if step == "font":
-            user_data[user_id]["new_name"] = message.text
-            user_data[user_id]["caption"] = message.text  # Name and caption are now the same
+            user_data[user_id]["new_name"] = message.text.strip()
+            user_data[user_id]["caption"] = message.text.strip()  # Name and caption are now the same
             user_data[user_id]["step"] = "name"
             await message.reply("New name and caption received! Now send a thumbnail image (JPG or PNG).")
     else:
