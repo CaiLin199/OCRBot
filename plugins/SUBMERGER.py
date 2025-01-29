@@ -84,7 +84,7 @@ async def merge_subtitles(client, message, user_id):
         "ffmpeg", "-i", video, "-i", subtitle,
         "-attach", font, "-metadata:s:t:0", "mimetype=application/x-font-otf",
         "-map", "0", "-map", "1",
-        "-metadata:s:s:0", "title=HeavenlySubs",
+        "-metadata:s:s:0", "title=DonghuaWillow",
         "-metadata:s:s:0", "language=eng", "-disposition:s:s:0", "default",
         "-c", "copy", output_file
     ]
