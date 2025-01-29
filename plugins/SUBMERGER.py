@@ -1,11 +1,16 @@
-from pyrogram import filters
 import os
 import subprocess
+import logging
+from pyrogram import filters
+from asyncio import create_task
 from bot import Bot  # Assuming Bot is a properly initialized Pyrogram Client in bot.py
-from config import OWNER_ID  # OWNER_ID should be defined in config.py
+from config import OWNER_ID, KOYEB_LOG_FILE  # OWNER_ID and KOYEB_LOG_FILE should be defined in config.py
 
 # Temporary storage for user progress and file paths
 user_data = {}
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 
 # Handle video upload
 @Bot.on_message(
@@ -14,6 +19,8 @@ user_data = {}
 )
 async def handle_video(client, message):
     user_id = message.from_user.id
+
+    logging.info(f"Received video from {user_id}")
 
     # Download and store video
     video_file = await message.download()
@@ -28,6 +35,8 @@ async def handle_video(client, message):
 async def handle_subtitle(client, message):
     user_id = message.from_user.id
 
+    logging.info(f"Received subtitle from {user_id}")
+
     if user_id in user_data and user_data[user_id].get("step") == "video":
         # Download and store subtitle
         subtitle_file = await message.download()
@@ -41,6 +50,8 @@ async def handle_subtitle(client, message):
 @Bot.on_message(filters.user(OWNER_ID) & filters.text)
 async def handle_name_or_caption(client, message):
     user_id = message.from_user.id
+
+    logging.info(f"Received name or caption from {user_id}")
 
     if user_id in user_data:
         step = user_data[user_id].get("step")
@@ -57,18 +68,20 @@ async def handle_name_or_caption(client, message):
 async def handle_thumbnail(client, message):
     user_id = message.from_user.id
 
+    logging.info(f"Received thumbnail from {user_id}")
+
     if user_id in user_data and user_data[user_id].get("step") == "name":
         thumbnail_file = await message.download()
         user_data[user_id]["thumbnail"] = thumbnail_file
 
         # Start merging
         await message.reply("Thumbnail received! Merging subtitles into the video...")
-        await merge_subtitles(client, message, user_id)
+        create_task(merge_subtitles_task(client, message, user_id))  # Offload processing to a background task
     else:
         await message.reply("Please send a name first.")
 
-# Merging subtitles with video
-async def merge_subtitles(client, message, user_id):
+# Background task to handle merging subtitles
+async def merge_subtitles_task(client, message, user_id):
     data = user_data[user_id]
     video = data["video"]
     subtitle = data["subtitle"]
@@ -108,12 +121,12 @@ async def merge_subtitles(client, message, user_id):
             os.remove(output_file)
         user_data.pop(user_id, None)
 
+# Command to start the bot interaction
 @Bot.on_message(filters.user(OWNER_ID) & filters.command("start"))
 async def start(client, message):
     await message.reply("Welcome! Start by sending me a video file (MKV or MP4) to add subtitles.")
 
-# Adding dynamic Koyeb log fetching feature
-
+# Command to fetch logs from Koyeb
 @Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"))
 async def fetch_logs(client, message):
     # Path to your Koyeb log file (update KOYEB_LOG_FILE in config.py)
