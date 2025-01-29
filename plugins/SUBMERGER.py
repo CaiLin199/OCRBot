@@ -10,7 +10,7 @@ from config import OWNER_ID, KOYEB_LOG_FILE  # OWNER_ID and KOYEB_LOG_FILE shoul
 user_data = {}
 
 # List of restricted words (commands like start, logs) to avoid conflicts with filenames or captions
-restricted_keywords = ["start", "logs", "help", "about", "commands", "status"]
+restricted_keywords = ["start", "logs"]
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
