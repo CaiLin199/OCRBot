@@ -4,7 +4,7 @@ import logging
 from pyrogram import filters
 from asyncio import create_task
 from bot import Bot  # Assuming Bot is a properly initialized Pyrogram Client in bot.py
-from config import OWNER_ID, KOYEB_LOG_FILE  # OWNER_ID and KOYEB_LOG_FILE should be defined in config.py
+from config import OWNER_ID, LOG_FILE_NAME  # Import LOG_FILE_NAME instead of KOYEB_LOG_FILE
 
 # Temporary storage for user progress and file paths
 user_data = {}
@@ -143,9 +143,9 @@ async def start(client, message):
 # Command to fetch logs from Koyeb
 @Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"))
 async def fetch_logs(client, message):
-    # Path to your Koyeb log file (update KOYEB_LOG_FILE in config.py)
+    # Path to your Koyeb log file (use LOG_FILE_NAME directly)
     try:
-        with open(KOYEB_LOG_FILE, 'r') as log_file:
+        with open(LOG_FILE_NAME, 'r') as log_file:
             logs = log_file.read()
             await message.reply(f"Latest logs:\n\n{logs}")
     except Exception as e:
