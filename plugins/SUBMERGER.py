@@ -9,8 +9,15 @@ from config import OWNER_ID, KOYEB_LOG_FILE  # OWNER_ID and KOYEB_LOG_FILE shoul
 # Temporary storage for user progress and file paths
 user_data = {}
 
+# List of restricted words (commands like start, logs) to avoid conflicts with filenames or captions
+restricted_keywords = ["start", "logs", "help", "about", "commands", "status"]
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
+
+# Function to check if the filename or caption contains any restricted keywords
+def contains_restricted_keywords(text):
+    return any(keyword.lower() in text.lower() for keyword in restricted_keywords)
 
 # Handle video upload
 @Bot.on_message(
@@ -56,8 +63,15 @@ async def handle_name_or_caption(client, message):
     if user_id in user_data:
         step = user_data[user_id].get("step")
         if step == "subtitle":
-            user_data[user_id]["new_name"] = message.text.strip()
-            user_data[user_id]["caption"] = message.text.strip()  # Name and caption are now the same
+            new_name = message.text.strip()
+
+            # Check if new name or caption contains restricted keywords
+            if contains_restricted_keywords(new_name):
+                await message.reply("The name or caption you provided contains restricted keywords. Please choose a different name.")
+                return
+
+            user_data[user_id]["new_name"] = new_name
+            user_data[user_id]["caption"] = new_name  # Name and caption are now the same
             user_data[user_id]["step"] = "name"
             await message.reply("New name and caption received! Now send a thumbnail image (JPG or PNG).")
     else:
