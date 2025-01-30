@@ -19,11 +19,10 @@ async def start(client, message):
 @Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"), group=0)
 async def fetch_logs(client, message):
     try:
-        with open(LOG_FILE_NAME, 'r') as log_file:
-            logs = log_file.read()
-            await message.reply(f"Latest logs:\n\n{logs}")
+        await message.reply_document(LOG_FILE_NAME, caption="Here are the latest logs.")
     except Exception as e:
         await message.reply(f"Error fetching logs: {str(e)}")
+
 
 # Video Upload Handler
 @Bot.on_message(
