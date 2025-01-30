@@ -173,13 +173,11 @@ async def merge_subtitles_task(client, message, user_id):
             os.remove(output_file)
         user_data.pop(user_id, None)
 
-# Start Command
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("start"))
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("start"), group=0)
 async def start(client, message):
     await message.reply("Welcome! Send me a video file (MKV or MP4) to add subtitles.")
 
-# Fetch Logs
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"))
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"), group=0)
 async def fetch_logs(client, message):
     try:
         with open(LOG_FILE_NAME, 'r') as log_file:
@@ -187,3 +185,4 @@ async def fetch_logs(client, message):
             await message.reply(f"Latest logs:\n\n{logs}")
     except Exception as e:
         await message.reply(f"Error fetching logs: {str(e)}")
+
