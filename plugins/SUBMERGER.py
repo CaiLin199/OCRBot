@@ -3,21 +3,27 @@ import subprocess
 import logging
 from pyrogram import filters
 from asyncio import create_task
-from bot import Bot  # Pyrogram Client from bot.py
+from bot import Bot
 from config import OWNER_ID, LOG_FILE_NAME  
 
 # Temporary storage for user progress and file paths
 user_data = {}
 
-# Restricted commands to avoid filename conflicts
-restricted_keywords = ["start", "logs"]
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-# Function to check if a filename contains restricted keywords
-def contains_restricted_keywords(text):
-    return any(keyword.lower() == text.lower() for keyword in restricted_keywords)
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("start"), group=0)
+async def start(client, message):
+    await message.reply("Welcome! Send me a video file (MKV or MP4) to add subtitles.")
+
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"), group=0)
+async def fetch_logs(client, message):
+    try:
+        with open(LOG_FILE_NAME, 'r') as log_file:
+            logs = log_file.read()
+            await message.reply(f"Latest logs:\n\n{logs}")
+    except Exception as e:
+        await message.reply(f"Error fetching logs: {str(e)}")
 
 # Video Upload Handler
 @Bot.on_message(
@@ -35,16 +41,14 @@ async def handle_video(client, message):
         percent = (current / total) * 100
         logging.info(f"Downloading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
 
-    # Download video with progress logging
     video_file = await message.download(progress=progress_log)
 
-    # Convert MP4 to MKV (if needed)
     if video_file.endswith(".mp4"):
         new_video_file = video_file.replace(".mp4", ".mkv")
         ffmpeg_cmd = ["ffmpeg", "-i", video_file, "-c", "copy", new_video_file]
         subprocess.run(ffmpeg_cmd, check=True)
-        os.remove(video_file)  # Remove original MP4
-        video_file = new_video_file  # Update reference
+        os.remove(video_file)
+        video_file = new_video_file
 
     logging.info(f"Download complete: {video_file}")
 
@@ -83,19 +87,13 @@ async def handle_name_or_caption(client, message):
 
     logging.info(f"Receiving new filename from {user_id}")
 
-    if user_id in user_data:
-        step = user_data[user_id].get("step")
-        if step == "subtitle":
-            new_name = message.text.strip()
+    if user_id in user_data and user_data[user_id].get("step") == "subtitle":
+        new_name = message.text.strip()
 
-            if contains_restricted_keywords(new_name):
-                await message.reply("Invalid name! Please choose another name.")
-                return
-
-            user_data[user_id]["new_name"] = new_name
-            user_data[user_id]["caption"] = new_name
-            user_data[user_id]["step"] = "name"
-            await message.reply("New name and caption received! Now send a thumbnail image (JPG or PNG).")
+        user_data[user_id]["new_name"] = new_name
+        user_data[user_id]["caption"] = new_name
+        user_data[user_id]["step"] = "name"
+        await message.reply("New name and caption received! Now send a thumbnail image (JPG or PNG).")
     else:
         await message.reply("Please start by sending a video file.")
 
@@ -117,7 +115,6 @@ async def handle_thumbnail(client, message):
 
         user_data[user_id]["thumbnail"] = thumbnail_file
 
-        # Start merging subtitles
         await message.reply("Thumbnail received! Merging subtitles into the video...")
         create_task(merge_subtitles_task(client, message, user_id))
     else:
@@ -165,24 +162,9 @@ async def merge_subtitles_task(client, message, user_id):
         await message.reply(f"Error: {e}")
 
     finally:
-        # Cleanup
         os.remove(video)
         os.remove(subtitle)
         os.remove(thumbnail)
         if os.path.exists(output_file):
             os.remove(output_file)
         user_data.pop(user_id, None)
-
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("start"), group=0)
-async def start(client, message):
-    await message.reply("Welcome! Send me a video file (MKV or MP4) to add subtitles.")
-
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"), group=0)
-async def fetch_logs(client, message):
-    try:
-        with open(LOG_FILE_NAME, 'r') as log_file:
-            logs = log_file.read()
-            await message.reply(f"Latest logs:\n\n{logs}")
-    except Exception as e:
-        await message.reply(f"Error fetching logs: {str(e)}")
-
