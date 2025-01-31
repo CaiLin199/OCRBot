@@ -5,7 +5,7 @@ from pyrogram.enums import ParseMode
 import sys
 from datetime import datetime
 
-from config import API_HASH, API_ID, LOGGER, TELEGRAM_TOKEN, TG_BOT_WORKERS, PORT
+from config import API_HASH, API_ID, LOGGER, TELEGRAM_TOKEN, TG_WORKERS, PORT
 
 class Bot(Client):
     def __init__(self):
