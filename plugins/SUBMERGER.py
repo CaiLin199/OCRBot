@@ -4,7 +4,7 @@ import logging
 from pyrogram import filters
 from asyncio import create_task
 from bot import Bot
-from config import OWNER_ID, LOG_FILE_NAME  
+from config import OWNER_ID
 
 # Temporary storage for user progress and file paths
 user_data = {}
@@ -12,16 +12,9 @@ user_data = {}
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("start"), group=0)
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("merge"), group=0)
 async def start(client, message):
-    await message.reply("Welcome! Send me a video file (MKV or MP4) to add subtitles.")
-
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"), group=0)
-async def fetch_logs(client, message):
-    try:
-        await message.reply_document(LOG_FILE_NAME, caption="Here are the latest logs.")
-    except Exception as e:
-        await message.reply(f"Error fetching logs: {str(e)}")
+    await message.reply("Send me a video file (MKV or MP4) to add subtitles.")
 
 # Video Upload Handler
 @Bot.on_message(
@@ -56,12 +49,12 @@ async def handle_video(client, message):
     logging.info(f"Download complete: {video_file}")
 
     user_data[user_id] = {"video": video_file, "step": "video"}
-    await message.reply("Video received! Now send the subtitle file (.ass or .srt).")
+    await message.reply("Video received! Now send the subtitle file (.ass).")
 
 # Subtitle Upload Handler
 @Bot.on_message(
     filters.user(OWNER_ID) &
-    filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith((".ass", ".srt", ".vtt")))
+    filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith(".ass"))
 )
 async def handle_subtitle(client, message):
     user_id = message.from_user.id
@@ -69,56 +62,10 @@ async def handle_subtitle(client, message):
 
     logging.info(f"Subtitle downloaded: {subtitle_file}")
 
-    # Convert SRT and VTT to ASS if needed
-    if subtitle_file.endswith(".srt") or subtitle_file.endswith(".vtt"):
-        ass_file = subtitle_file.rsplit('.', 1)[0] + ".ass"
-        ffmpeg_cmd = ["ffmpeg", "-i", subtitle_file, ass_file]
-        subprocess.run(ffmpeg_cmd, check=True)
-        os.remove(subtitle_file)  # Remove original SRT or VTT file
-        subtitle_file = ass_file  # Update to converted file
-
-    # Modify the .ass file
-    with open(subtitle_file, "r", encoding="utf-8") as f:
-        lines = f.readlines()
-
-    modified_lines = []
-    for line in lines:
-        if line.startswith("Style: Default"):
-            line = line.replace("Arial", "Oath-Bold").replace(",16,", ",20,")
-        if line.startswith("Dialogue:"):
-            parts = line.split(",", 9)  # Ensure the dialogue part is modified
-            if len(parts) > 9:
-                parts[9] = f"{{\\pos(193,265)}}{parts[9]}"
-            line = ",".join(parts)
-        modified_lines.append(line)
-
-    with open(subtitle_file, "w", encoding="utf-8") as f:
-        f.writelines(modified_lines)
-
-    logging.info(f"Modified subtitle file: {subtitle_file}")
-
-    # Send the converted and modified subtitle file to the user
-    await message.reply_document(document=subtitle_file, caption="Here is the converted and modified subtitle file. Please check and send the final subtitle file (if needed).")
-
     # Store subtitle file and wait for new name
     user_data[user_id]["subtitle"] = subtitle_file
     user_data[user_id]["step"] = "subtitle"
-
-# Final Subtitle Upload Handler
-@Bot.on_message(
-    filters.user(OWNER_ID) &
-    filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith(".ass"))
-)
-async def handle_final_subtitle(client, message):
-    user_id = message.from_user.id
-    final_subtitle_file = await message.download()
-
-    logging.info(f"Final subtitle downloaded: {final_subtitle_file}")
-
-    # Store final subtitle file and wait for new name
-    user_data[user_id]["subtitle"] = final_subtitle_file
-    user_data[user_id]["step"] = "final_subtitle"
-    await message.reply("Final subtitle received! Now send the new name for the output file (without extension).")
+    await message.reply("Subtitle received! Now send the new name for the output file (without extension).")
 
 # Handle Filename & Caption
 @Bot.on_message(filters.user(OWNER_ID) & filters.text)
@@ -127,14 +74,14 @@ async def handle_name_or_caption(client, message):
 
     logging.info(f"Receiving new filename from {user_id}")
 
-    if user_id in user_data and user_data[user_id].get("step") == "final_subtitle":
+    if user_id in user_data and user_data[user_id].get("step") == "subtitle":
         new_name = message.text.strip()
 
         user_data[user_id]["new_name"] = new_name
         user_data[user_id]["caption"] = new_name
         user_data[user_id]["step"] = "name"
         await message.reply("New name and caption received! Now processing the video.")
-        create_task(merge_subtitles_task(client, message, user_id))
+        create_task(merge_subtitles_task(client, message, user_id))  # Ensure the task is created here
     else:
         await message.reply("Please start by sending a video file.")
 
