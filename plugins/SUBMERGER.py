@@ -109,7 +109,8 @@ async def handle_subtitle(client, message):
                 line = line.replace("Arial", "Oath-Bold").replace(",16,", ",20,")
             if line.startswith("Dialogue:"):
                 parts = line.split(",", 9)  # Ensure the dialogue part is modified
-                parts[9] = f"{{\pos(193,265)}}{parts[9]}"
+                if len(parts) > 9:
+                    parts[9] = f"{{\\pos(193,265)}}{parts[9]}"
                 line = ",".join(parts)
             modified_lines.append(line)
 
