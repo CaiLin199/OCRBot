@@ -97,10 +97,28 @@ async def handle_subtitle(client, message):
 
     logging.info(f"Modified subtitle file: {subtitle_file}")
 
+    # Send the converted and modified subtitle file to the user
+    await message.reply_document(document=subtitle_file, caption="Here is the converted and modified subtitle file. Please check and send the final subtitle file (if needed).")
+
     # Store subtitle file and wait for new name
     user_data[user_id]["subtitle"] = subtitle_file
     user_data[user_id]["step"] = "subtitle"
-    await message.reply("Subtitle received! Now send the new name for the output file (without extension).")
+
+# Final Subtitle Upload Handler
+@Bot.on_message(
+    filters.user(OWNER_ID) &
+    filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith(".ass"))
+)
+async def handle_final_subtitle(client, message):
+    user_id = message.from_user.id
+    final_subtitle_file = await message.download()
+
+    logging.info(f"Final subtitle downloaded: {final_subtitle_file}")
+
+    # Store final subtitle file and wait for new name
+    user_data[user_id]["subtitle"] = final_subtitle_file
+    user_data[user_id]["step"] = "final_subtitle"
+    await message.reply("Final subtitle received! Now send the new name for the output file (without extension).")
 
 # Handle Filename & Caption
 @Bot.on_message(filters.user(OWNER_ID) & filters.text)
@@ -109,14 +127,14 @@ async def handle_name_or_caption(client, message):
 
     logging.info(f"Receiving new filename from {user_id}")
 
-    if user_id in user_data and user_data[user_id].get("step") == "subtitle":
+    if user_id in user_data and user_data[user_id].get("step") == "final_subtitle":
         new_name = message.text.strip()
 
         user_data[user_id]["new_name"] = new_name
         user_data[user_id]["caption"] = new_name
         user_data[user_id]["step"] = "name"
         await message.reply("New name and caption received! Now processing the video.")
-        create_task(merge_subtitles_task(client, message, user_id))  # Ensure the task is created here
+        create_task(merge_subtitles_task(client, message, user_id))
     else:
         await message.reply("Please start by sending a video file.")
 
