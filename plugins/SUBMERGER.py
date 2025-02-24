@@ -118,6 +118,9 @@ async def handle_video(client, message):
 
     logging.info(f"Download complete: {video_file}")
 
+    if user_id not in user_data:
+        user_data[user_id] = {}
+
     user_data[user_id]["video"] = video_file
     user_data[user_id]["step"] = "video"
     await message.reply("Video received! Now send the subtitle file (.ass).")
