@@ -77,29 +77,51 @@ async def handle_subtitle(client, message):
         os.remove(subtitle_file)  # Remove original SRT or VTT file
         subtitle_file = ass_file  # Update to converted file
 
-    # Modify the .ass file
-    with open(subtitle_file, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+        # Send the converted subtitle file to the user without a caption
+        await message.reply_document(
+            document=subtitle_file,
+            caption=None
+        )
+        await message.reply("Here is the converted subtitle file. Please send the final .ass subtitle file.")
 
-    modified_lines = []
-    for line in lines:
-        if line.startswith("Style: Default"):
-            line = line.replace("Arial", "Oath-Bold").replace(",16,", ",20,")
-        if line.startswith("Dialogue:"):
-            parts = line.split(",", 9)  # Ensure the dialogue part is modified
-            parts[9] = f"{{\pos(193,265)}}{parts[9]}"
-            line = ",".join(parts)
-        modified_lines.append(line)
+        # Wait for the final .ass subtitle file
+        @Bot.on_message(
+            filters.user(OWNER_ID) &
+            filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith(".ass"))
+        )
+        async def handle_final_subtitle(client, final_message):
+            final_subtitle_file = await final_message.download()
+            logging.info(f"Final subtitle downloaded: {final_subtitle_file}")
 
-    with open(subtitle_file, "w", encoding="utf-8") as f:
-        f.writelines(modified_lines)
+            # Store final subtitle file and wait for new name
+            user_data[user_id]["subtitle"] = final_subtitle_file
+            user_data[user_id]["step"] = "subtitle"
+            await final_message.reply("Final subtitle received! Now send the new name for the output file (without extension).")
 
-    logging.info(f"Modified subtitle file: {subtitle_file}")
+    else:
+        # Modify the .ass file
+        with open(subtitle_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
 
-    # Store subtitle file and wait for new name
-    user_data[user_id]["subtitle"] = subtitle_file
-    user_data[user_id]["step"] = "subtitle"
-    await message.reply("Subtitle received! Now send the new name for the output file (without extension).")
+        modified_lines = []
+        for line in lines:
+            if line.startswith("Style: Default"):
+                line = line.replace("Arial", "Oath-Bold").replace(",16,", ",20,")
+            if line.startswith("Dialogue:"):
+                parts = line.split(",", 9)  # Ensure the dialogue part is modified
+                parts[9] = f"{{\pos(193,265)}}{parts[9]}"
+                line = ",".join(parts)
+            modified_lines.append(line)
+
+        with open(subtitle_file, "w", encoding="utf-8") as f:
+            f.writelines(modified_lines)
+
+        logging.info(f"Modified subtitle file: {subtitle_file}")
+
+        # Store subtitle file and wait for new name
+        user_data[user_id]["subtitle"] = subtitle_file
+        user_data[user_id]["step"] = "subtitle"
+        await message.reply("Subtitle received! Now send the new name for the output file (without extension).")
 
 # Handle Filename & Caption
 @Bot.on_message(filters.user(OWNER_ID) & filters.text)
