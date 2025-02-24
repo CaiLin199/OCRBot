@@ -5,9 +5,6 @@ from pyrogram import filters
 from bot import Bot
 from config import OWNER_ID
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-
 @Bot.on_message(filters.user(OWNER_ID) & filters.command("final"), group=0)
 async def start_conversion(client, message):
     await message.reply("Send me the subtitle file (.srt or .vtt) for conversion.")
