@@ -116,6 +116,7 @@ async def handle_name_or_caption(client, message):
         user_data[user_id]["caption"] = new_name
         user_data[user_id]["step"] = "name"
         await message.reply("New name and caption received! Now processing the video.")
+        create_task(merge_subtitles_task(client, message, user_id))  # Ensure the task is created here
     else:
         await message.reply("Please start by sending a video file.")
 
