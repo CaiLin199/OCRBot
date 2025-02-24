@@ -61,7 +61,7 @@ async def handle_video(client, message):
 # Subtitle Upload Handler
 @Bot.on_message(
     filters.user(OWNER_ID) &
-    filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith((".ass", ".srt")))
+    filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith((".ass", ".srt", ".vtt")))
 )
 async def handle_subtitle(client, message):
     user_id = message.from_user.id
@@ -69,12 +69,12 @@ async def handle_subtitle(client, message):
 
     logging.info(f"Subtitle downloaded: {subtitle_file}")
 
-    # Convert SRT to ASS if needed
-    if subtitle_file.endswith(".srt"):
-        ass_file = subtitle_file.replace(".srt", ".ass")
+    # Convert SRT and VTT to ASS if needed
+    if subtitle_file.endswith(".srt") or subtitle_file.endswith(".vtt"):
+        ass_file = subtitle_file.rsplit('.', 1)[0] + ".ass"
         ffmpeg_cmd = ["ffmpeg", "-i", subtitle_file, ass_file]
         subprocess.run(ffmpeg_cmd, check=True)
-        os.remove(subtitle_file)  # Remove original SRT file
+        os.remove(subtitle_file)  # Remove original SRT or VTT file
         subtitle_file = ass_file  # Update to converted file
 
     # Modify the .ass file
