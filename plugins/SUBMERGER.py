@@ -26,7 +26,7 @@ async def fetch_logs(client, message):
 # Video Upload Handler
 @Bot.on_message(
     filters.user(OWNER_ID) &
-    (filters.video | (filters.document & filters.create(lambda _, __, m: m.document and (m.document.file_name.endswith((".mp4", ".mkv")) or not os.path.splitext(m.document.file_name)[1])))
+    (filters.video | (filters.document & filters.create(lambda _, __, m: m.document and (m.document.file_name.endswith((".mp4", ".mkv")) or not os.path.splitext(m.document.file_name)[1]))))
 )
 async def handle_video(client, message):
     user_id = message.from_user.id
