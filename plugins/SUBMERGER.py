@@ -54,6 +54,7 @@ async def handle_video(client, message):
     user_data[user_id] = {"video": video_file, "step": "video"}
     await message.reply("Video received! Now send the subtitle file (.ass or .srt).")
 
+
 # Subtitle Upload Handler
 @Bot.on_message(
     filters.user(OWNER_ID) &
@@ -61,23 +62,43 @@ async def handle_video(client, message):
 )
 async def handle_subtitle(client, message):
     user_id = message.from_user.id
+    subtitle_file = await message.download()
 
-    logging.info(f"Receiving subtitle from {user_id}")
+    logging.info(f"Subtitle downloaded: {subtitle_file}")
 
-    if user_id in user_data and user_data[user_id].get("step") == "video":
-        async def progress_log(current, total):
-            percent = (current / total) * 100
-            logging.info(f"Downloading subtitle: {percent:.2f}% for user {user_id}")
+    # Convert SRT to ASS if needed
+    if subtitle_file.endswith(".srt"):
+        ass_file = subtitle_file.replace(".srt", ".ass")
+        ffmpeg_cmd = ["ffmpeg", "-i", subtitle_file, ass_file]
+        subprocess.run(ffmpeg_cmd, check=True)
+        os.remove(subtitle_file)  # Remove original SRT file
+        subtitle_file = ass_file  # Update to converted file
 
-        subtitle_file = await message.download(progress=progress_log)
+    # Modify the .ass file
+    with open(subtitle_file, "r", encoding="utf-8") as f:
+        lines = f.readlines()
 
-        logging.info(f"Subtitle downloaded: {subtitle_file}")
+    modified_lines = []
+    for line in lines:
+        if line.startswith("Style: Default"):
+            line = line.replace("Arial", "Oath-Bold").replace(",16,", ",20,")
+        if line.startswith("Dialogue:"):
+            parts = line.split(",", 9)  # Ensure the dialogue part is modified
+            parts[9] = f"{{\pos(193,265)}}{parts[9]}"
+            line = ",".join(parts)
+        modified_lines.append(line)
 
-        user_data[user_id]["subtitle"] = subtitle_file
-        user_data[user_id]["step"] = "subtitle"
-        await message.reply("Subtitle received! Now send the new name for the output file (without extension).")
-    else:
-        await message.reply("Please send a video file first.")
+    with open(subtitle_file, "w", encoding="utf-8") as f:
+        f.writelines(modified_lines)
+
+    logging.info(f"Modified subtitle file: {subtitle_file}")
+
+    # Send the modified file to the user for review
+    await message.reply_document(
+        document=subtitle_file,
+        caption="Here is the modified subtitle file. Now, please send a new subtitle file."
+    )
+
 
 # Handle Filename & Caption
 @Bot.on_message(filters.user(OWNER_ID) & filters.text)
@@ -92,32 +113,11 @@ async def handle_name_or_caption(client, message):
         user_data[user_id]["new_name"] = new_name
         user_data[user_id]["caption"] = new_name
         user_data[user_id]["step"] = "name"
-        await message.reply("New name and caption received! Now send a thumbnail image (JPG or PNG).")
+        await message.reply("New name and caption received! Now processing the final video.")
+        create_task(merge_subtitles_task(client, message, user_id))
     else:
         await message.reply("Please start by sending a video file.")
 
-# Thumbnail Upload Handler
-@Bot.on_message(filters.user(OWNER_ID) & filters.photo)
-async def handle_thumbnail(client, message):
-    user_id = message.from_user.id
-
-    logging.info(f"Receiving thumbnail from {user_id}")
-
-    if user_id in user_data and user_data[user_id].get("step") == "name":
-        async def progress_log(current, total):
-            percent = (current / total) * 100
-            logging.info(f"Downloading thumbnail: {percent:.2f}% for user {user_id}")
-
-        thumbnail_file = await message.download(progress=progress_log)
-
-        logging.info(f"Thumbnail downloaded: {thumbnail_file}")
-
-        user_data[user_id]["thumbnail"] = thumbnail_file
-
-        await message.reply("Thumbnail received! Merging subtitles into the video...")
-        create_task(merge_subtitles_task(client, message, user_id))
-    else:
-        await message.reply("Please send a name first.")
 
 # Merging Subtitles
 async def merge_subtitles_task(client, message, user_id):
@@ -126,10 +126,10 @@ async def merge_subtitles_task(client, message, user_id):
     subtitle = data["subtitle"]
     new_name = data["new_name"]
     caption = data["caption"]
-    thumbnail = data["thumbnail"]
     output_file = f"{new_name}.mkv"
 
     font = 'Assist/Font/OathBold.otf'
+    thumbnail = 'Assist/Images/thumbnail.jpg'
 
     ffmpeg_cmd = [
         "ffmpeg", "-i", video, "-i", subtitle,
@@ -163,7 +163,6 @@ async def merge_subtitles_task(client, message, user_id):
     finally:
         os.remove(video)
         os.remove(subtitle)
-        os.remove(thumbnail)
         if os.path.exists(output_file):
             os.remove(output_file)
         user_data.pop(user_id, None)
