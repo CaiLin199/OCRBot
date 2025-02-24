@@ -16,6 +16,28 @@ logging.basicConfig(level=logging.INFO)
 async def start_conversion(client, message):
     await message.reply("Send me the subtitle file (.srt or .vtt) for conversion.")
 
+# Function to extract timestamps from subtitles
+def extract_timestamps(subtitle_file):
+    timestamps = []
+    with open(subtitle_file, "r", encoding="utf-8") as file:
+        for line in file:
+            if '-->' in line:
+                timestamps.append(line.strip().split(' --> ')[0])  # Get start time of subtitle
+    return timestamps
+
+# Function to extract screenshot with one subtitle line rendered
+def extract_screenshot(video_path, subtitle_path, timestamp, output_image):
+    command = [
+        'ffmpeg',
+        '-ss', timestamp,
+        '-i', video_path,
+        '-vf', f'subtitles={subtitle_path}',
+        '-frames:v', '1',
+        '-q:v', '2',
+        output_image
+    ]
+    subprocess.run(command, check=True)
+
 # Subtitle Upload Handler
 @Bot.on_message(
     filters.user(OWNER_ID) &
@@ -26,6 +48,10 @@ async def handle_subtitle_conversion(client, message):
     subtitle_file = await message.download()
 
     logging.info(f"Subtitle downloaded: {subtitle_file}")
+
+    # Extract timestamps from subtitles
+    timestamps = extract_timestamps(subtitle_file)
+    user_data[user_id] = {"timestamps": timestamps}
 
     # Convert SRT and VTT to ASS
     ass_file = subtitle_file.rsplit('.', 1)[0] + ".ass"
@@ -92,7 +118,8 @@ async def handle_video(client, message):
 
     logging.info(f"Download complete: {video_file}")
 
-    user_data[user_id] = {"video": video_file, "step": "video"}
+    user_data[user_id]["video"] = video_file
+    user_data[user_id]["step"] = "video"
     await message.reply("Video received! Now send the subtitle file (.ass).")
 
 # Subtitle Upload Handler
@@ -154,6 +181,14 @@ async def merge_subtitles_task(client, message, user_id):
         logging.info(f"Merging subtitles for user {user_id}: {output_file}")
         subprocess.run(ffmpeg_cmd, check=True)
 
+        # Extract screenshots at subtitle timestamps
+        screenshot_paths = []
+        if "timestamps" in data:
+            for i, timestamp in enumerate(data["timestamps"]):
+                screenshot_path = f"{new_name}_screenshot_{i+1}.png"
+                extract_screenshot(video, subtitle, timestamp, screenshot_path)
+                screenshot_paths.append(screenshot_path)
+
         async def upload_progress(current, total):
             percent = (current / total) * 100
             logging.info(f"Uploading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
@@ -166,6 +201,10 @@ async def merge_subtitles_task(client, message, user_id):
             progress=upload_progress
         )
 
+        # Send the screenshots along with the output video
+        for screenshot_path in screenshot_paths:
+            await message.reply_photo(photo=screenshot_path, caption="Here is a screenshot with subtitles.")
+
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to merge subtitles: {e}")
         await message.reply(f"Error: {e}")
@@ -175,4 +214,7 @@ async def merge_subtitles_task(client, message, user_id):
         os.remove(subtitle)
         if os.path.exists(output_file):
             os.remove(output_file)
+        for screenshot_path in screenshot_paths:
+            if os.path.exists(screenshot_path):
+                os.remove(screenshot_path)
         user_data.pop(user_id, None)
