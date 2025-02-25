@@ -61,7 +61,9 @@ async def handle_subtitle_conversion(client, message):
 
     # Extract timestamps from subtitles
     timestamps = extract_timestamps(subtitle_file)
-    user_data[user_id] = {"timestamps": timestamps}
+    if user_id not in user_data:
+        user_data[user_id] = {}
+    user_data[user_id]["timestamps"] = timestamps
 
     # Convert SRT and VTT to ASS
     ass_file = subtitle_file.rsplit('.', 1)[0] + ".ass"
@@ -147,6 +149,8 @@ async def handle_subtitle(client, message):
     logging.info(f"Subtitle downloaded: {subtitle_file}")
 
     # Store subtitle file and wait for new name
+    if user_id not in user_data:
+        user_data[user_id] = {}
     user_data[user_id]["subtitle"] = subtitle_file
     user_data[user_id]["step"] = "subtitle"
     await message.reply("Subtitle received! Now send the new name for the output file (without extension).")
