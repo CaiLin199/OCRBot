@@ -82,7 +82,7 @@ async def handle_subtitle_conversion(client, message):
     # Send the modified subtitle file to the user
     await message.reply_document(document=ass_file, caption="Here is the converted and modified subtitle file.")
 
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("merge"), group=0)
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("start"), group=0)
 async def start(client, message):
     await message.reply("Send me a video file (MKV or MP4) to add subtitles.")
 
@@ -184,14 +184,6 @@ async def merge_subtitles_task(client, message, user_id):
         logging.info(f"Merging subtitles for user {user_id}: {output_file}")
         subprocess.run(ffmpeg_cmd, check=True)
 
-        # Extract screenshots at subtitle timestamps
-        screenshot_paths = []
-        if "timestamps" in data:
-            for i, timestamp in enumerate(data["timestamps"]):
-                screenshot_path = f"{new_name}_screenshot_{i+1}.png"
-                extract_screenshot(video, subtitle, timestamp, screenshot_path)
-                screenshot_paths.append(screenshot_path)
-
         async def upload_progress(current, total):
             percent = (current / total) * 100
             logging.info(f"Uploading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
@@ -204,7 +196,15 @@ async def merge_subtitles_task(client, message, user_id):
             progress=upload_progress
         )
 
-        # Send the screenshots along with the output video
+        # Extract screenshot at the first subtitle timestamp
+        screenshot_paths = []
+        if "timestamps" in data:
+            timestamp = data["timestamps"][0]  # Using only the first timestamp
+            screenshot_path = f"{new_name}_screenshot_1.png"
+            extract_screenshot(video, subtitle, timestamp, screenshot_path)
+            screenshot_paths.append(screenshot_path)
+
+        # Send the screenshot after sending the video
         for screenshot_path in screenshot_paths:
             await message.reply_photo(photo=screenshot_path, caption="Here is a screenshot with subtitles.")
 
