@@ -2,7 +2,6 @@ import os
 import subprocess
 import logging
 from pyrogram import filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from asyncio import create_task
 from bot import Bot
 from config import OWNER_ID
@@ -17,37 +16,6 @@ logging.basicConfig(level=logging.INFO)
 async def start_conversion(client, message):
     await message.reply("Send me the subtitle file (.srt or .vtt) for conversion.")
 
-# Function to extract timestamps from subtitles
-def extract_timestamps(subtitle_file):
-    timestamps = []
-    with open(subtitle_file, "r", encoding="utf-8") as file:
-        for line in file:
-            if '-->' in line:
-                timestamps.append(line.strip().split(' --> ')[0])  # Get start time of subtitle
-    return timestamps
-
-# Function to extract screenshot with one subtitle line rendered
-def extract_screenshot(video_path, subtitle_path, timestamp, output_image):
-    command = [
-        'ffmpeg',
-        '-ss', timestamp,
-        '-i', video_path,
-        '-vf', f'subtitles={subtitle_path}',
-        '-frames:v', '1',
-        '-q:v', '2',
-        output_image
-    ]
-    subprocess.run(command, check=True)
-
-# Function to clean up user data and files
-def cleanup(user_id):
-    if user_id in user_data:
-        data = user_data[user_id]
-        for key in ["video", "subtitle"]:
-            if key in data and os.path.exists(data[key]):
-                os.remove(data[key])
-        user_data.pop(user_id, None)
-
 # Subtitle Upload Handler
 @Bot.on_message(
     filters.user(OWNER_ID) &
@@ -58,12 +26,6 @@ async def handle_subtitle_conversion(client, message):
     subtitle_file = await message.download()
 
     logging.info(f"Subtitle downloaded: {subtitle_file}")
-
-    # Extract timestamps from subtitles
-    timestamps = extract_timestamps(subtitle_file)
-    if user_id not in user_data:
-        user_data[user_id] = {}
-    user_data[user_id]["timestamps"] = timestamps
 
     # Convert SRT and VTT to ASS
     ass_file = subtitle_file.rsplit('.', 1)[0] + ".ass"
@@ -94,7 +56,7 @@ async def handle_subtitle_conversion(client, message):
     # Send the modified subtitle file to the user
     await message.reply_document(document=ass_file, caption="Here is the converted and modified subtitle file.")
 
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("start"), group=0)
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("merge"), group=0)
 async def start(client, message):
     await message.reply("Send me a video file (MKV or MP4) to add subtitles.")
 
@@ -130,11 +92,7 @@ async def handle_video(client, message):
 
     logging.info(f"Download complete: {video_file}")
 
-    if user_id not in user_data:
-        user_data[user_id] = {}
-
-    user_data[user_id]["video"] = video_file
-    user_data[user_id]["step"] = "video"
+    user_data[user_id] = {"video": video_file, "step": "video"}
     await message.reply("Video received! Now send the subtitle file (.ass).")
 
 # Subtitle Upload Handler
@@ -149,8 +107,6 @@ async def handle_subtitle(client, message):
     logging.info(f"Subtitle downloaded: {subtitle_file}")
 
     # Store subtitle file and wait for new name
-    if user_id not in user_data:
-        user_data[user_id] = {}
     user_data[user_id]["subtitle"] = subtitle_file
     user_data[user_id]["step"] = "subtitle"
     await message.reply("Subtitle received! Now send the new name for the output file (without extension).")
@@ -207,47 +163,16 @@ async def merge_subtitles_task(client, message, user_id):
             document=output_file,
             caption=caption,
             thumb=thumbnail,
-            progress=upload_progress,
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton("Get Screenshot", callback_data=f"screenshot_{user_id}_{new_name}")]]
-            )
+            progress=upload_progress
         )
 
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to merge subtitles: {e}")
         await message.reply(f"Error: {e}")
 
-# Handle Screenshot Button Click
-@Bot.on_callback_query(filters.regex(r"screenshot_(\d+)_(.+)"))
-async def handle_screenshot(client, callback_query):
-    user_id = int(callback_query.matches[0].group(1))
-    new_name = callback_query.matches[0].group(2)
-
-    if user_id in user_data and "video" in user_data[user_id] and "subtitle" in user_data[user_id] and "timestamps" in user_data[user_id]:
-        video = user_data[user_id]["video"]
-        subtitle = user_data[user_id]["subtitle"]
-        timestamps = user_data[user_id]["timestamps"]
-
-        # Extract screenshot at the first subtitle timestamp
-        timestamp = timestamps[0]  # Using only the first timestamp
-        screenshot_path = f"{new_name}_screenshot_1.png"
-        extract_screenshot(video, subtitle, timestamp, screenshot_path)
-
-        # Send the screenshot
-        await callback_query.message.reply_photo(photo=screenshot_path, caption="Here is a screenshot with subtitles.")
-        os.remove(screenshot_path)  # Clean up after sending
-
-        # Clean up user data and files
-        cleanup(user_id)
-    else:
-        await callback_query.message.reply("Unable to find video and subtitle data. Please try again.")
-
-# Command to clear full storage
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("cleanup"), group=0)
-async def clear_storage(client, message):
-    user_id = message.from_user.id
-    if user_id in user_data:
-        cleanup(user_id)
-        await message.reply("Storage has been cleared.")
-    else:
-        await message.reply("No storage to clear.")
+    finally:
+        os.remove(video)
+        os.remove(subtitle)
+        if os.path.exists(output_file):
+            os.remove(output_file)
+        user_data.pop(user_id, None)
