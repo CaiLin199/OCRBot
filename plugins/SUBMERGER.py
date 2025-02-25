@@ -5,7 +5,7 @@ from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from asyncio import create_task
 from bot import Bot
-from config import OWNER_ID
+from config import OWNER_ID, LOG_FILE_NAME
 
 # Temporary storage for user progress and file paths
 user_data = {}
@@ -13,6 +13,16 @@ user_data = {}
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+#Log file get handler
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"))
+async def get_log_file(client, message):
+	try:
+		await message.reply_document(document=LOG_FILE_NAME, caption=log file by SubMerger)
+	except Exception as e:
+		logger.error(f"Failed to send log file to OWNER: {e}")
+		await message_reply(f"Error:{e}")
+
 
 @Bot.on_message(filters.user(OWNER_ID) & filters.command("final"), group=0)
 async def start_conversion(client, message):
