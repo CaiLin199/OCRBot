@@ -2,6 +2,7 @@ import os
 import subprocess
 import logging
 from pyrogram import filters
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from asyncio import create_task
 from bot import Bot
 from config import OWNER_ID
@@ -193,31 +194,37 @@ async def merge_subtitles_task(client, message, user_id):
             document=output_file,
             caption=caption,
             thumb=thumbnail,
-            progress=upload_progress
+            progress=upload_progress,
+            reply_markup=InlineKeyboardMarkup(
+                [[InlineKeyboardButton("Get Screenshot", callback_data=f"screenshot_{user_id}_{new_name}")]]
+            )
         )
-
-        # Extract screenshot at the first subtitle timestamp
-        screenshot_paths = []
-        if "timestamps" in data:
-            timestamp = data["timestamps"][0]  # Using only the first timestamp
-            screenshot_path = f"{new_name}_screenshot_1.png"
-            extract_screenshot(video, subtitle, timestamp, screenshot_path)
-            screenshot_paths.append(screenshot_path)
-
-        # Send the screenshot after sending the video
-        for screenshot_path in screenshot_paths:
-            await message.reply_photo(photo=screenshot_path, caption="Here is a screenshot with subtitles.")
 
     except subprocess.CalledProcessError as e:
         logging.error(f"Failed to merge subtitles: {e}")
         await message.reply(f"Error: {e}")
 
-    finally:
-        os.remove(video)
-        os.remove(subtitle)
-        if os.path.exists(output_file):
-            os.remove(output_file)
-        for screenshot_path in screenshot_paths:
-            if os.path.exists(screenshot_path):
-                os.remove(screenshot_path)
+# Handle Screenshot Button Click
+@Bot.on_callback_query(filters.regex(r"screenshot_(\d+)_(.+)"))
+async def handle_screenshot(client, callback_query):
+    user_id = int(callback_query.matches[0].group(1))
+    new_name = callback_query.matches[0].group(2)
+
+    if user_id in user_data and "video" in user_data[user_id] and "subtitle" in user_data[user_id] and "timestamps" in user_data[user_id]:
+        video = user_data[user_id]["video"]
+        subtitle = user_data[user_id]["subtitle"]
+        timestamps = user_data[user_id]["timestamps"]
+
+        # Extract screenshot at the first subtitle timestamp
+        timestamp = timestamps[0]  # Using only the first timestamp
+        screenshot_path = f"{new_name}_screenshot_1.png"
+        extract_screenshot(video, subtitle, timestamp, screenshot_path)
+
+        # Send the screenshot
+        await callback_query.message.reply_photo(photo=screenshot_path, caption="Here is a screenshot with subtitles.")
+        os.remove(screenshot_path)  # Clean up after sending
+
+        # Clean up user data
         user_data.pop(user_id, None)
+    else:
+        await callback_query.message.reply("Unable to find video and subtitle data. Please try again.")
