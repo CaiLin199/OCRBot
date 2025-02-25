@@ -39,6 +39,15 @@ def extract_screenshot(video_path, subtitle_path, timestamp, output_image):
     ]
     subprocess.run(command, check=True)
 
+# Function to clean up user data and files
+def cleanup(user_id):
+    if user_id in user_data:
+        data = user_data[user_id]
+        for key in ["video", "subtitle"]:
+            if key in data and os.path.exists(data[key]):
+                os.remove(data[key])
+        user_data.pop(user_id, None)
+
 # Subtitle Upload Handler
 @Bot.on_message(
     filters.user(OWNER_ID) &
@@ -224,7 +233,17 @@ async def handle_screenshot(client, callback_query):
         await callback_query.message.reply_photo(photo=screenshot_path, caption="Here is a screenshot with subtitles.")
         os.remove(screenshot_path)  # Clean up after sending
 
-        # Clean up user data
-        user_data.pop(user_id, None)
+        # Clean up user data and files
+        cleanup(user_id)
     else:
         await callback_query.message.reply("Unable to find video and subtitle data. Please try again.")
+
+# Command to clear full storage
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("cleanup"), group=0)
+async def clear_storage(client, message):
+    user_id = message.from_user.id
+    if user_id in user_data:
+        cleanup(user_id)
+        await message.reply("Storage has been cleared.")
+    else:
+        await message.reply("No storage to clear.")
