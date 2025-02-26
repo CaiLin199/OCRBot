@@ -14,17 +14,26 @@ user_data = {}
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+#Log file get handler
 @Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"))
 async def get_log_file(client, message):
-    try:
-        await message.reply_document(document=LOG_FILE_NAME, caption="Log file by SubMerger")
-    except Exception as e:
-        logger.error(f"Failed to send log file to OWNER: {e}")
-        await message.reply(f"Error: {e}")
+        try:
+                await message.reply_document(document=LOG_FILE_NAME, caption="log file by SubMerger")
+        except Exception as e:
+                logger.error(f"Failed to send log file to OWNER: {e}")
+                await message_reply(f"Error:{e}")
+
 
 @Bot.on_message(filters.user(OWNER_ID) & filters.command("final"), group=0)
 async def start_conversion(client, message):
     await message.reply("Send me the subtitle file (.srt or .vtt) for conversion.")
+
+# Command to clear full storage
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("cleanup"), group=0)
+async def clear_storage(client, message):
+    user_id = message.from_user.id
+    cleanup(user_id)
+    await message.reply("Storage has been cleared.")
 
 # Subtitle Upload Handler
 @Bot.on_message(
@@ -86,24 +95,7 @@ async def handle_video(client, message):
 
         async def progress_log(current, total):
             percent = (current / total) * 100
-            speed = current / (1024**2)  # Speed in MB/s
-            eta = (total - current) / speed if speed > 0 else 0
-
-            progress_bar = "⬡" * int(percent // 4)
-            progress_message = (
-                f"Downloading...\n\n"
-                f"{progress_bar}\n\n"
-                f"╭━━━━❰ᴘʀᴏɢʀᴇss ʙᴀʀ❱━➣\n"
-                f"┣⪼ 🗃️ Sɪᴢᴇ: {current / (1024**2):.2f} MB | {total / (1024**2):.2f} MB\n"
-                f"┣⪼ ⏳️ Dᴏɴᴇ: {percent:.2f}%\n"
-                f"┣⪼ 🚀 Sᴩᴇᴇᴅ: {speed:.2f} MB/s\n"
-                f"┣⪼ ⏰️ Eᴛᴀ: {eta // 60:.0f}ᴍ, {eta % 60:.0f}s\n"
-                f"╰━━━━━━━━━━━━━━━➣"
-            )
-            try:
-                await message.edit_text(progress_message)
-            except Exception as e:
-                logger.error(f"Failed to update progress message: {e}")
+            logger.info(f"Downloading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
 
         video_file = await message.download(file_name=file_name, progress=progress_log)
 
@@ -183,11 +175,6 @@ async def merge_subtitles_task(client, message, user_id):
     output_file = f"{new_name}.mkv"
 
     font = 'Assist/Font/OathBold.otf'
-    if not os.path.exists(font):
-        logger.error(f"Font file not found: {font}")
-        await message.reply(f"Error: Font file not found: {font}")
-        return
-
     thumbnail = 'Assist/Images/thumbnail.jpg'
 
     ffmpeg_cmd = [
@@ -205,24 +192,7 @@ async def merge_subtitles_task(client, message, user_id):
 
         async def upload_progress(current, total):
             percent = (current / total) * 100
-            speed = current / (1024**2)  # Speed in MB/s
-            eta = (total - current) / speed if speed > 0 else 0
-
-            progress_bar = "⬡" * int(percent // 4)
-            progress_message = (
-                f"Uploading...\n\n"
-                f"{progress_bar}\n\n"
-                f"╭━━━━❰ᴘʀᴏɢʀᴇss ʙᴀʀ❱━➣\n"
-                f"┣⪼ 🗃️ Sɪᴢᴇ: {current / (1024**2):.2f} MB | {total / (1024**2):.2f} MB\n"
-                f"┣⪼ ⏳️ Dᴏɴᴇ: {percent:.2f}%\n"
-                f"┣⪼ 🚀 Sᴩᴇᴇᴅ: {speed:.2f} MB/s\n"
-                f"┣⪼ ⏰️ Eᴛᴀ: {eta // 60:.0f}ᴍ, {eta % 60:.0f}s\n"
-                f"╰━━━━━━━━━━━━━━━➣"
-            )
-            try:
-                await message.edit_text(progress_message)
-            except Exception as e:
-                logger.error(f"Failed to update progress message: {e}")
+            logger.info(f"Uploading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
 
         logger.info(f"Uploading merged video: {output_file}")
         await message.reply_document(
@@ -292,10 +262,3 @@ def cleanup(user_id):
                 os.remove(data[key])
         user_data.pop(user_id, None)
         logger.info(f"Cleaned up data for user {user_id}")
-
-# Command to clear full storage
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("cleanup"), group=0)
-async def clear_storage(client, message):
-    user_id = message.from_user.id
-    cleanup(user_id)
-    await message.reply("Storage has been cleared.")
