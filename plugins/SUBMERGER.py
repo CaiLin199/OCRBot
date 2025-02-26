@@ -14,15 +14,13 @@ user_data = {}
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-#Log file get handler
 @Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"))
 async def get_log_file(client, message):
-	try:
-		await message.reply_document(document=LOG_FILE_NAME, caption="log file by SubMerger")
-	except Exception as e:
-		logger.error(f"Failed to send log file to OWNER: {e}")
-		await message_reply(f"Error:{e}")
-
+    try:
+        await message.reply_document(document=LOG_FILE_NAME, caption="Log file by SubMerger")
+    except Exception as e:
+        logger.error(f"Failed to send log file to OWNER: {e}")
+        await message.reply(f"Error: {e}")
 
 @Bot.on_message(filters.user(OWNER_ID) & filters.command("final"), group=0)
 async def start_conversion(client, message):
@@ -88,7 +86,21 @@ async def handle_video(client, message):
 
         async def progress_log(current, total):
             percent = (current / total) * 100
-            logger.info(f"Downloading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
+            speed = current / (1024**2)  # Speed in MB/s
+            eta = (total - current) / speed if speed > 0 else 0
+
+            progress_bar = "⬡" * int(percent // 4)
+            progress_message = (
+                f"Downloading...\n\n"
+                f"⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡\n\n"
+                f"╭━━━━❰ᴘʀᴏɢʀᴇss ʙᴀʀ❱━➣\n"
+                f"┣⪼ 🗃️ Sɪᴢᴇ: {current / (1024**2):.2f} MB | {total / (1024**2):.2f} MB\n"
+                f"┣⪼ ⏳️ Dᴏɴᴇ : {percent:.2f}%\n"
+                f"┣⪼ 🚀 Sᴩᴇᴇᴅ: {speed:.2f} MB/s\n"
+                f"┣⪼ ⏰️ Eᴛᴀ: {eta // 60:.0f}ᴍ, {eta % 60:.0f}s\n"
+                f"╰━━━━━━━━━━━━━━━➣"
+            )
+            await message.edit_text(progress_message)
 
         video_file = await message.download(file_name=file_name, progress=progress_log)
 
