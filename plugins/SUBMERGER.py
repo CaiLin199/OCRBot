@@ -92,15 +92,18 @@ async def handle_video(client, message):
             progress_bar = "⬡" * int(percent // 4)
             progress_message = (
                 f"Downloading...\n\n"
-                f"⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡⬡\n\n"
+                f"{progress_bar}\n\n"
                 f"╭━━━━❰ᴘʀᴏɢʀᴇss ʙᴀʀ❱━➣\n"
                 f"┣⪼ 🗃️ Sɪᴢᴇ: {current / (1024**2):.2f} MB | {total / (1024**2):.2f} MB\n"
-                f"┣⪼ ⏳️ Dᴏɴᴇ : {percent:.2f}%\n"
+                f"┣⪼ ⏳️ Dᴏɴᴇ: {percent:.2f}%\n"
                 f"┣⪼ 🚀 Sᴩᴇᴇᴅ: {speed:.2f} MB/s\n"
                 f"┣⪼ ⏰️ Eᴛᴀ: {eta // 60:.0f}ᴍ, {eta % 60:.0f}s\n"
                 f"╰━━━━━━━━━━━━━━━➣"
             )
-            await message.edit_text(progress_message)
+            try:
+                await message.edit_text(progress_message)
+            except Exception as e:
+                logger.error(f"Failed to update progress message: {e}")
 
         video_file = await message.download(file_name=file_name, progress=progress_log)
 
@@ -180,6 +183,11 @@ async def merge_subtitles_task(client, message, user_id):
     output_file = f"{new_name}.mkv"
 
     font = 'Assist/Font/OathBold.otf'
+    if not os.path.exists(font):
+        logger.error(f"Font file not found: {font}")
+        await message.reply(f"Error: Font file not found: {font}")
+        return
+
     thumbnail = 'Assist/Images/thumbnail.jpg'
 
     ffmpeg_cmd = [
@@ -197,7 +205,24 @@ async def merge_subtitles_task(client, message, user_id):
 
         async def upload_progress(current, total):
             percent = (current / total) * 100
-            logger.info(f"Uploading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
+            speed = current / (1024**2)  # Speed in MB/s
+            eta = (total - current) / speed if speed > 0 else 0
+
+            progress_bar = "⬡" * int(percent // 4)
+            progress_message = (
+                f"Uploading...\n\n"
+                f"{progress_bar}\n\n"
+                f"╭━━━━❰ᴘʀᴏɢʀᴇss ʙᴀʀ❱━➣\n"
+                f"┣⪼ 🗃️ Sɪᴢᴇ: {current / (1024**2):.2f} MB | {total / (1024**2):.2f} MB\n"
+                f"┣⪼ ⏳️ Dᴏɴᴇ: {percent:.2f}%\n"
+                f"┣⪼ 🚀 Sᴩᴇᴇᴅ: {speed:.2f} MB/s\n"
+                f"┣⪼ ⏰️ Eᴛᴀ: {eta // 60:.0f}ᴍ, {eta % 60:.0f}s\n"
+                f"╰━━━━━━━━━━━━━━━➣"
+            )
+            try:
+                await message.edit_text(progress_message)
+            except Exception as e:
+                logger.error(f"Failed to update progress message: {e}")
 
         logger.info(f"Uploading merged video: {output_file}")
         await message.reply_document(
