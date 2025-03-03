@@ -5,7 +5,7 @@ from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from asyncio import create_task
 from bot import Bot
-from config import OWNER_ID, LOG_FILE_NAME
+from config import OWNER_ID, LOG_FILE_NAME, OWNER_IDS
 
 # Temporary storage for user progress and file paths
 user_data = {}
@@ -15,7 +15,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(level
 logger = logging.getLogger(__name__)
 
 #Log file get handler
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"))
+@Bot.on_message(filters.user(OWNER_IDS) & filters.command("logs"))
 async def get_log_file(client, message):
         try:
                 await message.reply_document(document=LOG_FILE_NAME, caption="log file by SubMerger")
@@ -24,12 +24,12 @@ async def get_log_file(client, message):
                 await message_reply(f"Error:{e}")
 
 
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("final"), group=0)
+@Bot.on_message(filters.user(OWNER_IDS) & filters.command("final"), group=0)
 async def start_conversion(client, message):
     await message.reply("Send me the subtitle file (.srt or .vtt) for conversion.")
 
 # Command to clear full storage
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("cleanup"), group=0)
+@Bot.on_message(filters.user(OWNER_IDS) & filters.command("cleanup"), group=0)
 async def clear_storage(client, message):
     user_id = message.from_user.id
     cleanup(user_id)
@@ -37,7 +37,7 @@ async def clear_storage(client, message):
 
 # Subtitle Upload Handler
 @Bot.on_message(
-    filters.user(OWNER_ID) &
+    filters.user(OWNER_IDS) &
     filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith((".srt", ".vtt")))
 )
 async def handle_subtitle_conversion(client, message):
@@ -75,13 +75,13 @@ async def handle_subtitle_conversion(client, message):
     # Send the modified subtitle file to the user
     await message.reply_document(document=ass_file, caption="Here is the converted and modified subtitle file.")
 
-@Bot.on_message(filters.user(OWNER_ID) & filters.command("merge"), group=0)
+@Bot.on_message(filters.user(OWNER_IDS) & filters.command("merge"), group=0)
 async def start(client, message):
     await message.reply("Send me a video file (MKV or MP4) to add subtitles.")
 
 # Video Upload Handler
 @Bot.on_message(
-    filters.user(OWNER_ID) &
+    filters.user(OWNER_IDS) &
     (filters.video | (filters.document & filters.create(lambda _, __, m: m.document and (m.document.file_name.endswith((".mp4", ".mkv")) or not os.path.splitext(m.document.file_name)[1]))))
 )
 async def handle_video(client, message):
@@ -133,7 +133,7 @@ async def handle_button_click(client, callback_query):
 
 # Subtitle Upload Handler
 @Bot.on_message(
-    filters.user(OWNER_ID) &
+    filters.user(OWNER_IDS) &
     filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith(".ass"))
 )
 async def handle_subtitle(client, message):
@@ -148,7 +148,7 @@ async def handle_subtitle(client, message):
     await message.reply("Subtitle received! Now send the new name for the output file (without extension).")
 
 # Handle Filename & Caption
-@Bot.on_message(filters.user(OWNER_ID) & filters.text)
+@Bot.on_message(filters.user(OWNER_IDS) & filters.text)
 async def handle_name_or_caption(client, message):
     user_id = message.from_user.id
 
