@@ -181,9 +181,11 @@ async def merge_subtitles_task(client, message, user_id):
     thumbnail = 'Assist/Images/thumbnail.jpg'
 
     ffmpeg_cmd = [
-        "ffmpeg", "-i", video, "-i", subtitle,
+        "ffmpeg", "-i", video,
+        "-map", "0:v", "-map", "0:a?",  # Map video and audio only, excluding existing subtitles
+        "-i", subtitle,
         "-attach", font, "-metadata:s:t:0", "mimetype=application/x-font-otf",
-        "-map", "0", "-map", "1",
+        "-map", "1",
         "-metadata:s:s:0", "title=HeavenlySubs",
         "-metadata:s:s:0", "language=eng", "-disposition:s:s:0", "default",
         "-c", "copy", output_file
