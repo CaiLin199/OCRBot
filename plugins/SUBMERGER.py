@@ -141,6 +141,10 @@ async def handle_subtitle(client, message):
 
     logger.info(f"Subtitle downloaded: {subtitle_file}")
 
+    # Ensure user_data entry exists for the user
+    if user_id not in user_data:
+        user_data[user_id] = {}
+
     # Store subtitle file
     user_data[user_id]["subtitle"] = subtitle_file
     user_data[user_id]["step"] = "subtitle"
@@ -231,8 +235,6 @@ async def extract_subtitles(client, message, user_id):
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to extract subtitles: {e}")
         await message.reply(f"Error: {e}")
-    finally:
-        cleanup(user_id)
 
 # Function to generate screenshot using ffmpeg
 async def generate_screenshot(client, message, user_id):
@@ -256,8 +258,6 @@ async def generate_screenshot(client, message, user_id):
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to generate screenshot: {e}")
         await message.reply(f"Error: {e}")
-    finally:
-        cleanup(user_id)
 
 # Function to clean up user data and files
 def cleanup(user_id):
