@@ -14,15 +14,14 @@ user_data = {}
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-#Log file get handler
+# Log file get handler
 @Bot.on_message(filters.user(OWNER_IDS) & filters.command("logs"))
 async def get_log_file(client, message):
-        try:
-                await message.reply_document(document=LOG_FILE_NAME, caption="log file by SubMerger")
-        except Exception as e:
-                logger.error(f"Failed to send log file to OWNER: {e}")
-                await message_reply(f"Error:{e}")
-
+    try:
+        await message.reply_document(document=LOG_FILE_NAME, caption="log file by SubMerger")
+    except Exception as e:
+        logger.error(f"Failed to send log file to OWNER: {e}")
+        await message.reply(f"Error:{e}")
 
 @Bot.on_message(filters.user(OWNER_IDS) & filters.command("final"), group=0)
 async def start_conversion(client, message):
@@ -213,6 +212,7 @@ async def extract_subtitles(client, message, user_id):
     data = user_data[user_id]
     video_file = data["video"]
     output_subtitle = video_file.rsplit('.', 1)[0] + ".srt"
+    output_ass = video_file.rsplit('.', 1)[0] + ".ass"
 
     ffmpeg_cmd = ["ffmpeg", "-i", video_file, "-map", "0:s:0", output_subtitle]
 
@@ -221,7 +221,13 @@ async def extract_subtitles(client, message, user_id):
         subprocess.run(ffmpeg_cmd, check=True)
         logger.info(f"Subtitles extracted to {output_subtitle}")
 
+        # Convert SRT to ASS format
+        ffmpeg_cmd_ass = ["ffmpeg", "-i", output_subtitle, output_ass]
+        subprocess.run(ffmpeg_cmd_ass, check=True)
+        logger.info(f"Subtitles converted to {output_ass}")
+
         await message.reply_document(document=output_subtitle, caption="Here is the extracted subtitle file.")
+        await message.reply_document(document=output_ass, caption="Here is the converted ASS subtitle file.")
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to extract subtitles: {e}")
         await message.reply(f"Error: {e}")
