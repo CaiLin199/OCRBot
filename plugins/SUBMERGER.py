@@ -180,18 +180,28 @@ async def merge_subtitles_task(client, message, user_id):
     font = 'Assist/Font/OathBold.otf'
     thumbnail = 'Assist/Images/thumbnail.jpg'
 
-    ffmpeg_cmd = [
+    # First remove all existing subtitles
+    remove_subs_cmd = [
         "ffmpeg", "-i", video,
-        "-map", "0:v", "-map", "0:a?",  # Map video and audio only, excluding existing subtitles
-        "-i", subtitle,
-        "-attach", font, "-metadata:s:t:0", "mimetype=application/x-font-otf",
-        "-map", "1",
-        "-metadata:s:s:0", "title=HeavenlySubs",
-        "-metadata:s:s:0", "language=eng", "-disposition:s:s:0", "default",
-        "-c", "copy", output_file
+        "-map", "0:v", "-map", "0:a?",
+        "-c", "copy", "-y", "removed_subtitles.mkv"
     ]
 
     try:
+        logger.info(f"Removing existing subtitles from video for user {user_id}")
+        subprocess.run(remove_subs_cmd, check=True)
+
+        # Add the new subtitle
+        ffmpeg_cmd = [
+            "ffmpeg", "-i", "removed_subtitles.mkv",
+            "-i", subtitle,
+            "-attach", font, "-metadata:s:t:0", "mimetype=application/x-font-otf",
+            "-map", "0", "-map", "1",
+            "-metadata:s:s:0", "title=HeavenlySubs",
+            "-metadata:s:s:0", "language=eng", "-disposition:s:s:0", "default",
+            "-c", "copy", output_file
+        ]
+
         logger.info(f"Merging subtitles for user {user_id}: {output_file}")
         subprocess.run(ffmpeg_cmd, check=True)
 
@@ -211,6 +221,9 @@ async def merge_subtitles_task(client, message, user_id):
         logger.error(f"Failed to merge subtitles: {e}")
         await message.reply(f"Error: {e}")
     finally:
+        # Clean up temporary files
+        if os.path.exists("removed_subtitles.mkv"):
+            os.remove("removed_subtitles.mkv")
         cleanup(user_id)
 
 # Function to extract subtitles using ffmpeg
