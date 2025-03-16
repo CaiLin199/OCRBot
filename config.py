@@ -2,7 +2,7 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 
-TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "7734176057:AAGKxQpdeI7eQc20_8GHQ8LovgufHSMizS0")
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "7734176057:AAH58BbBdUyKmJYM18u4D2kua-Cmmp4kYmM")
 API_ID = int(os.environ.get("API_ID", "26254064"))
 API_HASH = os.environ.get("API_HASH", "72541d6610ae7730e6135af9423b319c")
 OWNER_ID = int(os.environ.get("OWNER_ID", "5296584067"))
