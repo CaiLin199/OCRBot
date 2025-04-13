@@ -1,4 +1,4 @@
-import os
+'''import os
 import subprocess
 import logging
 from pyrogram import filters
@@ -282,4 +282,4 @@ def cleanup(user_id):
             if key in data and os.path.exists(data[key]):
                 os.remove(data[key])
         user_data.pop(user_id, None)
-        logger.info(f"Cleaned up data for user {user_id}")
+        logger.info(f"Cleaned up data for user {user_id}")'''
