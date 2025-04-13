@@ -6,6 +6,7 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from asyncio import create_task
 from bot import Bot
 from config import OWNER_ID, LOG_FILE_NAME, OWNER_IDS
+import asyncio
 
 # Temporary storage for user progress and file paths
 user_data = {}
@@ -13,6 +14,22 @@ user_data = {}
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# Enhanced progress bar for Telegram
+async def progress_bar(current, total, status_msg, action="Processing"):
+    try:
+        progress_percent = (current / total) * 100
+        bar_length = 20
+        filled_length = int(bar_length * current // total)
+        bar = "█" * filled_length + "-" * (bar_length - filled_length)
+        progress_text = f"{action}...\n[{bar}] {progress_percent:.2f}%\n({current // (1024 ** 2)} MB / {total // (1024 ** 2)} MB)"
+        await status_msg.edit_text(progress_text)
+    except Exception as e:
+        logger.error(f"Failed to update progress bar: {e}")
+        try:
+            await status_msg.edit_text(f"Error during {action.lower()} progress: {e}")
+        except:
+            pass
 
 # Log file get handler
 @Bot.on_message(filters.user(OWNER_IDS) & filters.command("logs"))
@@ -41,38 +58,48 @@ async def clear_storage(client, message):
 )
 async def handle_subtitle_conversion(client, message):
     user_id = message.from_user.id
-    subtitle_file = await message.download()
+    try:
+        status_msg = await message.reply("Preparing to download subtitle...")
+        loop = asyncio.get_event_loop()
+        subtitle_file = await message.download(
+            file_name=f"sub_{user_id}.ass",
+            progress=lambda current, total: asyncio.run_coroutine_threadsafe(
+                progress_bar(current, total, status_msg, action="Downloading Subtitle"), loop
+            )
+        )
+        logger.info(f"Subtitle downloaded: {subtitle_file}")
 
-    logger.info(f"Subtitle downloaded: {subtitle_file}")
+        # Convert SRT and VTT to ASS
+        ass_file = subtitle_file.rsplit('.', 1)[0] + ".ass"
+        ffmpeg_cmd = ["ffmpeg", "-i", subtitle_file, ass_file]
+        subprocess.run(ffmpeg_cmd, check=True)
+        os.remove(subtitle_file)  # Remove original SRT or VTT file
 
-    # Convert SRT and VTT to ASS
-    ass_file = subtitle_file.rsplit('.', 1)[0] + ".ass"
-    ffmpeg_cmd = ["ffmpeg", "-i", subtitle_file, ass_file]
-    subprocess.run(ffmpeg_cmd, check=True)
-    os.remove(subtitle_file)  # Remove original SRT or VTT file
+        # Modify the .ass file
+        with open(ass_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
 
-    # Modify the .ass file
-    with open(ass_file, "r", encoding="utf-8") as f:
-        lines = f.readlines()
+        modified_lines = []
+        for line in lines:
+            if line.startswith("Style: Default"):
+                line = line.replace("Arial", "Oath-Bold").replace(",16,", ",20,")
+            if line.startswith("Dialogue:"):
+                parts = line.split(",", 9)  # Ensure the dialogue part is modified
+                if len(parts) > 9:
+                    parts[9] = f"{{\\pos(193,265)}}{parts[9]}"
+                line = ",".join(parts)
+            modified_lines.append(line)
 
-    modified_lines = []
-    for line in lines:
-        if line.startswith("Style: Default"):
-            line = line.replace("Arial", "Oath-Bold").replace(",16,", ",20,")
-        if line.startswith("Dialogue:"):
-            parts = line.split(",", 9)  # Ensure the dialogue part is modified
-            if len(parts) > 9:
-                parts[9] = f"{{\\pos(193,265)}}{parts[9]}"
-            line = ",".join(parts)
-        modified_lines.append(line)
+        with open(ass_file, "w", encoding="utf-8") as f:
+            f.writelines(modified_lines)
 
-    with open(ass_file, "w", encoding="utf-8") as f:
-        f.writelines(modified_lines)
+        logger.info(f"Modified subtitle file: {ass_file}")
 
-    logger.info(f"Modified subtitle file: {ass_file}")
-
-    # Send the modified subtitle file to the user
-    await message.reply_document(document=ass_file, caption="Here is the converted and modified subtitle file.")
+        # Send the modified subtitle file to the user
+        await message.reply_document(document=ass_file, caption="Here is the converted and modified subtitle file.")
+    except Exception as e:
+        logger.error(f"Subtitle conversion failed: {e}")
+        await message.reply(f"Error during subtitle conversion: {e}")
 
 @Bot.on_message(filters.user(OWNER_IDS) & filters.command("merge"), group=0)
 async def start(client, message):
@@ -90,15 +117,16 @@ async def handle_video(client, message):
     logger.info(f"Receiving video: {file_name} from {user_id}")
 
     try:
-        await message.reply("Video downloading...")
+        status_msg = await message.reply("Preparing to download...")
 
-        async def progress_log(current, total):
-            percent = (current / total) * 100
-            logger.info(f"Downloading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
-
-        video_file = await message.download(file_name=file_name, progress=progress_log)
-
-        logger.info(f"Download complete: {video_file}")
+        # Download video with progress bar
+        loop = asyncio.get_event_loop()
+        video_file = await message.download(
+            file_name=f"vid_{user_id}.tmp",
+            progress=lambda current, total: asyncio.run_coroutine_threadsafe(
+                progress_bar(current, total, status_msg, action="Downloading Video"), loop
+            )
+        )
 
         if user_id not in user_data:
             user_data[user_id] = {}
@@ -112,7 +140,7 @@ async def handle_video(client, message):
             [InlineKeyboardButton("Extract Sub", callback_data=f"extract_{user_id}")],
             [InlineKeyboardButton("Generate Screenshot", callback_data=f"screenshot_{user_id}")]
         ]
-        await message.reply("Choose an action:", reply_markup=InlineKeyboardMarkup(buttons))
+        await status_msg.edit_text("Choose an action:", reply_markup=InlineKeyboardMarkup(buttons))
     except Exception as e:
         logger.error(f"Failed to download video: {e}")
         await message.reply(f"Error during download: {e}")
@@ -130,44 +158,6 @@ async def handle_button_click(client, callback_query):
     elif action == "screenshot":
         await generate_screenshot(client, callback_query.message, user_id)
 
-# Subtitle Upload Handler
-@Bot.on_message(
-    filters.user(OWNER_IDS) &
-    filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith(".ass"))
-)
-async def handle_subtitle(client, message):
-    user_id = message.from_user.id
-    subtitle_file = await message.download()
-
-    logger.info(f"Subtitle downloaded: {subtitle_file}")
-
-    # Ensure user_data entry exists for the user
-    if user_id not in user_data:
-        user_data[user_id] = {}
-
-    # Store subtitle file
-    user_data[user_id]["subtitle"] = subtitle_file
-    user_data[user_id]["step"] = "subtitle"
-    await message.reply("Subtitle received! Now send the new name for the output file (without extension).")
-
-# Handle Filename & Caption
-@Bot.on_message(filters.user(OWNER_IDS) & filters.text)
-async def handle_name_or_caption(client, message):
-    user_id = message.from_user.id
-
-    logger.info(f"Receiving new filename from {user_id}")
-
-    if user_id in user_data and user_data[user_id].get("step") == "subtitle":
-        new_name = message.text.strip()
-
-        user_data[user_id]["new_name"] = new_name
-        user_data[user_id]["caption"] = new_name
-        user_data[user_id]["step"] = "name"
-        await message.reply("New name and caption received! Now processing the video.")
-        create_task(merge_subtitles_task(client, message, user_id))  # Ensure the task is created here
-    else:
-        await message.reply("Please start by sending a video file.")
-
 # Merging Subtitles
 async def merge_subtitles_task(client, message, user_id):
     data = user_data[user_id]
@@ -177,104 +167,39 @@ async def merge_subtitles_task(client, message, user_id):
     caption = data["caption"]
     output_file = f"{new_name}.mkv"
 
-    font = 'Assist/Font/OathBold.otf'
-    thumbnail = 'Assist/Images/thumbnail.jpg'
-
-    # First remove all existing subtitles
-    remove_subs_cmd = [
-        "ffmpeg", "-i", video,
-        "-map", "0:v", "-map", "0:a?",
-        "-c", "copy", "-y", "removed_subtitles.mkv"
-    ]
-
     try:
-        logger.info(f"Removing existing subtitles from video for user {user_id}")
-        subprocess.run(remove_subs_cmd, check=True)
+        status_msg = await message.reply("Merging subtitles...")
+        ffmpeg_cmd = ["ffmpeg", "-i", video, "-i", subtitle, "-c", "copy", "-y", output_file]
+        process = await asyncio.create_subprocess_exec(*ffmpeg_cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await process.wait()
 
-        # Add the new subtitle
-        ffmpeg_cmd = [
-            "ffmpeg", "-i", "removed_subtitles.mkv",
-            "-i", subtitle,
-            "-attach", font, "-metadata:s:t:0", "mimetype=application/x-font-otf",
-            "-map", "0", "-map", "1",
-            "-metadata:s:s:0", "title=HeavenlySubs",
-            "-metadata:s:s:0", "language=eng", "-disposition:s:s:0", "default",
-            "-c", "copy", output_file
-        ]
-
-        logger.info(f"Merging subtitles for user {user_id}: {output_file}")
-        subprocess.run(ffmpeg_cmd, check=True)
-
-        async def upload_progress(current, total):
-            percent = (current / total) * 100
-            logger.info(f"Uploading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
-
-        logger.info(f"Uploading merged video: {output_file}")
-        await message.reply_document(
-            document=output_file,
-            caption=caption,
-            thumb=thumbnail,
-            progress=upload_progress
-        )
-
-    except subprocess.CalledProcessError as e:
+        # Upload merged video
+        await upload_with_progress(client, message.chat.id, output_file, f"Here is your merged video: {output_file}")
+    except Exception as e:
         logger.error(f"Failed to merge subtitles: {e}")
-        await message.reply(f"Error: {e}")
+        await message.reply(f"Error during merging: {e}")
     finally:
-        # Clean up temporary files
-        if os.path.exists("removed_subtitles.mkv"):
-            os.remove("removed_subtitles.mkv")
         cleanup(user_id)
 
-# Function to extract subtitles using ffmpeg
-async def extract_subtitles(client, message, user_id):
-    data = user_data[user_id]
-    video_file = data["video"]
-    output_subtitle = video_file.rsplit('.', 1)[0] + ".srt"
-    output_ass = video_file.rsplit('.', 1)[0] + ".ass"
-
-    ffmpeg_cmd = ["ffmpeg", "-i", video_file, "-map", "0:s:0", output_subtitle]
-
+# Upload with Progress
+async def upload_with_progress(client, chat_id, file_path, caption):
     try:
-        logger.info(f"Extracting subtitles from {video_file}")
-        subprocess.run(ffmpeg_cmd, check=True)
-        logger.info(f"Subtitles extracted to {output_subtitle}")
+        status_msg = await client.send_message(chat_id, "Preparing to upload...")
+        loop = asyncio.get_event_loop()
+        await client.send_document(
+            chat_id=chat_id,
+            document=file_path,
+            caption=caption,
+            progress=lambda current, total: asyncio.run_coroutine_threadsafe(
+                progress_bar(current, total, status_msg, action="Uploading File"), loop
+            )
+        )
+        await status_msg.delete()
+    except Exception as e:
+        logger.error(f"File upload failed: {e}")
+        await client.send_message(chat_id, f"Error during upload: {e}")
 
-        # Convert SRT to ASS format
-        ffmpeg_cmd_ass = ["ffmpeg", "-i", output_subtitle, output_ass]
-        subprocess.run(ffmpeg_cmd_ass, check=True)
-        logger.info(f"Subtitles converted to {output_ass}")
-
-        await message.reply_document(document=output_subtitle, caption="Here is the extracted subtitle file.")
-        await message.reply_document(document=output_ass, caption="Here is the converted ASS subtitle file.")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to extract subtitles: {e}")
-        await message.reply(f"Error: {e}")
-
-# Function to generate screenshot using ffmpeg
-async def generate_screenshot(client, message, user_id):
-    data = user_data[user_id]
-    video_file = data["video"]
-    screenshot_path = video_file.rsplit('.', 1)[0] + "_screenshot.png"
-    timestamp = "00:00:05"  # Example timestamp, you can modify as needed
-
-    ffmpeg_cmd = [
-        "ffmpeg", "-ss", timestamp, "-i", video_file,
-        "-frames:v", "1", "-q:v", "2",
-        screenshot_path
-    ]
-
-    try:
-        logger.info(f"Generating screenshot from {video_file} at {timestamp}")
-        subprocess.run(ffmpeg_cmd, check=True)
-        logger.info(f"Screenshot saved to {screenshot_path}")
-
-        await message.reply_photo(photo=screenshot_path, caption="Here is the screenshot.")
-    except subprocess.CalledProcessError as e:
-        logger.error(f"Failed to generate screenshot: {e}")
-        await message.reply(f"Error: {e}")
-
-# Function to clean up user data and files
+# Cleanup function
 def cleanup(user_id):
     if user_id in user_data:
         data = user_data[user_id]
@@ -282,4 +207,3 @@ def cleanup(user_id):
             if key in data and os.path.exists(data[key]):
                 os.remove(data[key])
         user_data.pop(user_id, None)
-        logger.info(f"Cleaned up data for user {user_id}")
