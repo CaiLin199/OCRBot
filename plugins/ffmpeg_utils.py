@@ -79,7 +79,7 @@ async def generate_screenshot(client, message, user_id):
     data = user_data[user_id]
     video_file = data["video"]
     screenshot_path = video_file.rsplit('.', 1)[0] + "_screenshot.png"
-    timestamp = "00:00:05"
+    timestamp = "00:03:05"
 
     try:
         logger.info(f"Generating screenshot from {video_file} at {timestamp}")
