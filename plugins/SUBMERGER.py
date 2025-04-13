@@ -30,7 +30,7 @@ def log_resources(prefix=""):
     return f"{prefix}RAM: {ram:.1f}% | Storage: {storage:.2f}GB | CPU: {cpu:.1f}%"
 
 # Log file handler
-@Bot.on_message(filters.user(OWNER_IDS) & filters.command("logs"))
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("logs"))
 async def get_log_file(client, message):
     try:
         await message.reply_document(document=LOG_FILE_NAME, caption="Log file by SubMerger")
@@ -39,11 +39,11 @@ async def get_log_file(client, message):
         logger.error(f"Failed to send log file: {e}")
         await message.reply(f"Error: {e}")
 
-@Bot.on_message(filters.user(OWNER_IDS) & filters.command("final"))
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("final"))
 async def start_conversion(client, message):
     await message.reply("Send a subtitle file (.srt or .vtt) for conversion.")
 
-@Bot.on_message(filters.user(OWNER_IDS) & filters.command("cleanup"))
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("cleanup"))
 async def clear_storage(client, message):
     user_id = message.from_user.id
     await cleanup(user_id)
@@ -51,7 +51,7 @@ async def clear_storage(client, message):
     logger.info(log_resources(f"Cleared storage for user {user_id}: "))
 
 # Subtitle conversion handler
-@Bot.on_message(filters.user(OWNER_IDS) & filters.document & filters.regex(r"\.(srt|vtt)$"))
+@Bot.on_message(filters.user(OWNER_ID) & filters.document & filters.regex(r"\.(srt|vtt)$"))
 async def handle_subtitle_conversion(client, message):
     user_id = message.from_user.id
     status_msg = await message.reply("Converting subtitle...")
@@ -88,13 +88,13 @@ async def handle_subtitle_conversion(client, message):
             if f and os.path.exists(f):
                 os.remove(f)
 
-@Bot.on_message(filters.user(OWNER_IDS) & filters.command("merge"))
+@Bot.on_message(filters.user(OWNER_ID) & filters.command("merge"))
 async def start(client, message):
     await message.reply("Send a video file (MKV or MP4, 400-600 MB).")
 
 # Video upload handler
 @Bot.on_message(
-    filters.user(OWNER_IDS) &
+    filters.user(OWNER_ID) &
     (filters.video | filters.document & filters.regex(r"\.(mp4|mkv)$"))
 )
 async def handle_video(client, message):
@@ -142,7 +142,7 @@ async def handle_button_click(client, callback_query):
     await callback_query.answer()
 
 # Subtitle upload for merging
-@Bot.on_message(filters.user(OWNER_IDS) & filters.document & filters.regex(r"\.ass$"))
+@Bot.on_message(filters.user(OWNER_ID) & filters.document & filters.regex(r"\.ass$"))
 async def handle_subtitle(client, message):
     user_id = message.from_user.id
     try:
@@ -161,7 +161,7 @@ async def handle_subtitle(client, message):
         await status_msg.edit_text(f"Error: {e}")
 
 # Handle filename
-@Bot.on_message(filters.user(OWNER_IDS) & filters.text)
+@Bot.on_message(filters.user(OWNER_ID) & filters.text)
 async def handle_name_or_caption(client, message):
     user_id = message.from_user.id
     if user_id in user_data and user_data[user_id].get("step") == "subtitle":
