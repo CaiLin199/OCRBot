@@ -7,7 +7,7 @@ from bot import Bot
 from config import OWNER_IDS
 from .progress_handler import progress_bar
 from datetime import datetime
-from .bot_modes import is_auto_mode
+from .mode import is_auto_mode
 from .subtitle_encode import process_subtitle
 from .filename import convert_filename
 from .ffmpeg_utils import merge_subtitles_task
