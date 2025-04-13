@@ -1,6 +1,6 @@
 from pyrogram import filters
 from bot import Bot
-from .video_handler import user_data
+from .video_handler import user_data, logger
 from .ffmpeg_utils import extract_subtitles, generate_screenshot
 
 @Bot.on_callback_query(filters.regex(r"(merge|extract|screenshot)_(\d+)"))
