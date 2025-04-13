@@ -1,5 +1,5 @@
 from aiohttp import web
-from plugins.route import web_server  # Changed from plugins import web_server
+from plugins import web_server
 from pyrogram import Client
 from pyrogram.enums import ParseMode
 import sys
@@ -40,16 +40,12 @@ class Bot(Client):
                                           """)
         self.username = usr_bot_me.username
         # web-response
-        try:
-            app = web.AppRunner(await web_server())
-            await app.setup()
-            bind_address = "0.0.0.0"
-            await web.TCPSite(app, bind_address, PORT).start()
-            self.LOGGER(__name__).info(f"Webhook server started on port {PORT}")
-        except Exception as e:
-            self.LOGGER(__name__).error(f"Failed to start webhook server: {str(e)}")
-            raise
+        app = web.AppRunner(await web_server())
+        await app.setup()
+        bind_address = "0.0.0.0"
+        await web.TCPSite(app, bind_address, PORT).start()
 
     async def stop(self, *args):
         await super().stop()
         self.LOGGER(__name__).info("Bot stopped.")
+        
