@@ -58,6 +58,10 @@ async def progress_bar(current, total, status_msg, action="Processing"):
         await status_msg.edit_text(progress_text)
     except Exception as e:
         logger.error(f"Failed to update progress bar: {e}")
+        try:
+            await status_msg.edit_text(f"Error during {action.lower()} progress: {e}")
+        except:
+            pass  # Avoid crashing if edit_text fails
 
 @Bot.on_message(
     filters.user(OWNER_IDS) &
@@ -76,7 +80,7 @@ async def handle_video(client, message):
         status_msg = await message.reply("Downloading video...")
         video_file = await message.download(
             file_name=f"vid_{user_id}.tmp",
-            progress=lambda current, total: progress_bar(current, total, status_msg, action="Downloading")
+            progress=lambda current, total: asyncio.create_task(progress_bar(current, total, status_msg, action="Downloading"))
         )
         logger.info(log_resources(f"Download complete ({video_file}): "))
 
@@ -90,7 +94,9 @@ async def handle_video(client, message):
         await status_msg.edit_text("Choose an action:", reply_markup=InlineKeyboardMarkup(buttons))
     except Exception as e:
         logger.error(f"Video download failed: {e}")
-        await status_msg.edit_text(f"Error: {e}")
+        await status_msg.edit_text(f"Error during download: {e}")
+        # Optionally delete the status message if you want to remove it
+        # await status_msg.delete()
 
 @Bot.on_message(filters.user(OWNER_IDS) & filters.document & filters.regex(r"\.ass$"))
 async def handle_subtitle(client, message):
@@ -99,7 +105,7 @@ async def handle_subtitle(client, message):
         status_msg = await message.reply("Downloading subtitle...")
         subtitle_file = await message.download(
             file_name=f"sub_{user_id}.ass",
-            progress=lambda current, total: progress_bar(current, total, status_msg, action="Downloading")
+            progress=lambda current, total: asyncio.create_task(progress_bar(current, total, status_msg, action="Downloading"))
         )
         logger.info(log_resources(f"Subtitle downloaded ({subtitle_file}): "))
 
@@ -108,7 +114,7 @@ async def handle_subtitle(client, message):
         await status_msg.edit_text("Send the output file name (without extension).")
     except Exception as e:
         logger.error(f"Subtitle upload failed: {e}")
-        await status_msg.edit_text(f"Error: {e}")
+        await status_msg.edit_text(f"Error during subtitle download: {e}")
 
 @Bot.on_message(filters.user(OWNER_IDS) & filters.text)
 async def handle_name_or_caption(client, message):
@@ -146,12 +152,12 @@ async def merge_subtitles_task(client, status_msg, user_id):
             chat_id=status_msg.chat.id,
             document=output_file,
             caption=caption,
-            progress=lambda current, total: progress_bar(current, total, status_msg, action="Uploading")
+            progress=lambda current, total: asyncio.create_task(progress_bar(current, total, status_msg, action="Uploading"))
         )
         logger.info(log_resources(f"Uploaded merged video ({output_file}): "))
     except Exception as e:
         logger.error(f"Merge failed: {e}")
-        await status_msg.edit_text(f"Error: {e}")
+        await status_msg.edit_text(f"Error during merge: {e}")
     finally:
         if os.path.exists(output_file):
             os.remove(output_file)
