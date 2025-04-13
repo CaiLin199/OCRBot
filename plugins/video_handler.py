@@ -70,6 +70,11 @@ async def handle_video(client, message):
             user_data[user_id] = {}
         
         user_data[user_id]["video"] = video_file
+        
+        # Convert filename to new format
+        new_name = convert_filename(file_name)
+        user_data[user_id]["new_name"] = new_name
+        user_data[user_id]["caption"] = new_name
 
         if is_auto_mode():
             # Auto Mode Processing
@@ -82,10 +87,7 @@ async def handle_video(client, message):
                 success, result = process_subtitle(subtitle_file)
                 
                 if success:
-                    # Generate new filename
-                    new_name = convert_filename(file_name)
                     user_data[user_id]["subtitle"] = result
-                    user_data[user_id]["new_name"] = new_name
                     
                     await status_msg.edit("🔄 Merging video with subtitle...")
                     await merge_subtitles_task(client, message, user_id)
