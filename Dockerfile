@@ -1,55 +1,26 @@
-FROM python:3.8-slim-buster AS build
+# Use minimal base image
+FROM python:3.11-slim-bullseye
 
-# Install all necessary libraries, including FFmpeg dependencies
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
+# Set working directory
+WORKDIR /app
+
+# Install dependencies in one layer to reduce size, clean up caches
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    libavdevice58 \
-    libavfilter7 \
-    libavformat58 \
-    libavcodec58 \
-    libswresample3 \
-    libswscale5 \
-    libpostproc55 \
-    libavutil56 \
-    libavresample4 \
-    git \
-    ca-certificates \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/*
 
-WORKDIR /app
-
-# Install Python dependencies
+# Copy requirements first for caching
 COPY requirements.txt .
-RUN pip3 install --no-cache-dir -r requirements.txt
 
-# Final stage
-FROM python:3.8-slim-buster
+# Install Python dependencies, avoid cache to reduce image size
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install libraries in the final stage as well
-RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
-    libavdevice58 \
-    libavfilter7 \
-    libavformat58 \
-    libavcodec58 \
-    libswresample3 \
-    libswscale5 \
-    libpostproc55 \
-    libavutil56 \
-    libavresample4 \
-    ca-certificates \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy FFmpeg binaries from the build stage
-COPY --from=build /usr/bin/ffmpeg /usr/bin/ffmpeg
-COPY --from=build /usr/bin/ffprobe /usr/bin/ffprobe
-
-# Copy Python dependencies from the build stage
-COPY --from=build /usr/local/lib/python3.8/site-packages /usr/local/lib/python3.8/site-packages
-
-WORKDIR /app
+# Copy application code
 COPY . .
 
-# Set the default command to run the bot
-CMD ["python3", "main.py"]
+# Set environment variables for efficiency
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+# Run bot with proper signal handling
+CMD ["python", "bot.py"]
