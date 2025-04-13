@@ -1,59 +1,39 @@
 import os
-import subprocess
-import asyncio
+import logging
 from pyrogram import filters
 from bot import Bot
-from plugins.storage_handler import user_data
-import logging
+from config import OWNER_IDS
+from .video_handler import user_data
+from .ffmpeg_utils import merge_subtitles_task
 
-logger = logging.getLogger(__name__)
-
-# Subtitle Upload Handler
 @Bot.on_message(
     filters.user(OWNER_IDS) &
-    filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith((".srt", ".vtt")))
+    filters.document & filters.create(lambda _, __, m: m.document and m.document.file_name.endswith((".srt", ".vtt", ".ass")))
 )
 async def handle_subtitle_conversion(client, message):
     user_id = message.from_user.id
-    try:
-        status_msg = await message.reply("Preparing to download subtitle...")
-        loop = asyncio.get_event_loop()
-        subtitle_file = await message.download(
-            file_name=f"sub_{user_id}.ass",
-            progress=lambda current, total: asyncio.run_coroutine_threadsafe(
-                progress_bar(current, total, status_msg, action="Downloading Subtitle"), loop
-            )
-        )
-        logger.info(f"Subtitle downloaded: {subtitle_file}")
+    subtitle_file = await message.download()
 
-        # Convert SRT and VTT to ASS
-        ass_file = subtitle_file.rsplit('.', 1)[0] + ".ass"
-        ffmpeg_cmd = ["ffmpeg", "-i", subtitle_file, ass_file]
-        subprocess.run(ffmpeg_cmd, check=True)
-        os.remove(subtitle_file)  # Remove original SRT or VTT file
+    logger.info(f"Subtitle downloaded: {subtitle_file}")
 
-        # Modify the .ass file
-        with open(ass_file, "r", encoding="utf-8") as f:
-            lines = f.readlines()
+    if user_id not in user_data:
+        user_data[user_id] = {}
 
-        modified_lines = []
-        for line in lines:
-            if line.startswith("Style: Default"):
-                line = line.replace("Arial", "Oath-Bold").replace(",16,", ",20,")
-            if line.startswith("Dialogue:"):
-                parts = line.split(",", 9)  # Ensure the dialogue part is modified
-                if len(parts) > 9:
-                    parts[9] = f"{{\\pos(193,265)}}{parts[9]}"
-                line = ",".join(parts)
-            modified_lines.append(line)
+    user_data[user_id]["subtitle"] = subtitle_file
+    user_data[user_id]["step"] = "subtitle"
+    await message.reply("Subtitle received! Now send the new name for the output file (without extension).")
 
-        with open(ass_file, "w", encoding="utf-8") as f:
-            f.writelines(modified_lines)
+@Bot.on_message(filters.user(OWNER_IDS) & filters.text)
+async def handle_name_or_caption(client, message):
+    user_id = message.from_user.id
 
-        logger.info(f"Modified subtitle file: {ass_file}")
+    if user_id in user_data and user_data[user_id].get("step") == "subtitle":
+        new_name = message.text.strip()
 
-        # Send the modified subtitle file to the user
-        await message.reply_document(document=ass_file, caption="Here is the converted and modified subtitle file.")
-    except Exception as e:
-        logger.error(f"Subtitle conversion failed: {e}")
-        await message.reply(f"Error during subtitle conversion: {e}")
+        user_data[user_id]["new_name"] = new_name
+        user_data[user_id]["caption"] = new_name
+        user_data[user_id]["step"] = "name"
+        await message.reply("New name and caption received! Now processing the video.")
+        create_task(merge_subtitles_task(client, message, user_id))
+    else:
+        await message.reply("Please start by sending a video file.")
