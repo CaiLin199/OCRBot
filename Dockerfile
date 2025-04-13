@@ -4,9 +4,9 @@ FROM python:3.11-slim-bullseye
 # Set working directory
 WORKDIR /app
 
-# Install dependencies in one layer, pin FFmpeg, clean up thoroughly
+# Install dependencies in one layer, clean up thoroughly
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg=7:4.3.2-0+deb11u2 \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/*
 
 # Copy requirements first for caching
