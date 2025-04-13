@@ -61,7 +61,7 @@ async def progress_bar(current, total, status_msg, action="Processing"):
 
 @Bot.on_message(
     filters.user(OWNER_IDS) &
-    (filters.video | filters.document & filters.regex(r"\.(mp4|mkv)$"))
+    (filters.video | (filters.document & filters.create(lambda _, __, m: m.document and (m.document.file_name.endswith((".mp4", ".mkv")) or not os.path.splitext(m.document.file_name)[1]))))
 )
 async def handle_video(client, message):
     user_id = message.from_user.id
