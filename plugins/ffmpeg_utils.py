@@ -5,6 +5,7 @@ from datetime import datetime
 from .video_handler import user_data, logger
 from .cleanup import cleanup
 from .progress_handler import progress_bar
+from config import DB_CHANNEL
 
 async def merge_subtitles_task(client, message, user_id):
     data = user_data[user_id]
@@ -57,12 +58,20 @@ async def merge_subtitles_task(client, message, user_id):
             except Exception as e:
                 logger.error(f"Progress update failed: {str(e)}")
 
-        await message.reply_document(
+        # Send to user
+        sent_message = await message.reply_document(
             document=output_file,
             caption=caption,
             thumb=thumbnail,
             progress=upload_progress
         )
+
+        # Save copy of the message to DB_CHANNEL
+        try:
+            await sent_message.copy(chat_id=DB_CHANNEL)
+            logger.info(f"File saved to DB_CHANNEL: {output_file}")
+        except Exception as e:
+            logger.error(f"Failed to save to DB_CHANNEL: {e}")
 
         await status_msg.edit("✅ Upload Complete!")
 
