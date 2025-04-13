@@ -47,14 +47,17 @@ async def clear_storage(client, message):
     await message.reply("Storage cleared.")
     logger.info(log_resources(f"Cleared storage for user {user_id}: "))
 
-# Async progress bar for Telegram
+# Enhanced progress bar for Telegram
 async def progress_bar(current, total, status_msg, action="Processing"):
     try:
+        # Calculate progress
         progress_percent = (current / total) * 100
         bar_length = 20  # Length of the progress bar
         filled_length = int(bar_length * current // total)
         bar = "█" * filled_length + "-" * (bar_length - filled_length)
-        progress_text = f"{action}...\n[{bar}] {progress_percent:.2f}%\n[{current // (1024**2)} MB / {total // (1024**2)} MB]"
+        progress_text = f"{action}...\n[{bar}] {progress_percent:.2f}%\n{current // (1024**2)} MB / {total // (1024**2)} MB"
+
+        # Edit the message with the progress bar
         await status_msg.edit_text(progress_text)
     except Exception as e:
         logger.error(f"Failed to update progress bar: {e}")
@@ -77,15 +80,20 @@ async def handle_video(client, message):
         return
 
     try:
-        status_msg = await message.reply("Downloading video...")
+        # Initial progress message
+        status_msg = await message.reply("Preparing to download...")
+
+        # Download the video with a progress bar
         video_file = await message.download(
             file_name=f"vid_{user_id}.tmp",
             progress=lambda current, total: asyncio.create_task(progress_bar(current, total, status_msg, action="Downloading"))
         )
         logger.info(log_resources(f"Download complete ({video_file}): "))
 
+        # Save the downloaded video in user data
         user_data[user_id] = {"video": video_file, "step": "video"}
 
+        # Display available actions
         buttons = [
             [InlineKeyboardButton("Merge", callback_data=f"merge_{user_id}")],
             [InlineKeyboardButton("Extract Sub", callback_data=f"extract_{user_id}")],
@@ -95,14 +103,12 @@ async def handle_video(client, message):
     except Exception as e:
         logger.error(f"Video download failed: {e}")
         await status_msg.edit_text(f"Error during download: {e}")
-        # Optionally delete the status message if you want to remove it
-        # await status_msg.delete()
 
 @Bot.on_message(filters.user(OWNER_IDS) & filters.document & filters.regex(r"\.ass$"))
 async def handle_subtitle(client, message):
     user_id = message.from_user.id
     try:
-        status_msg = await message.reply("Downloading subtitle...")
+        status_msg = await message.reply("Preparing to download subtitle...")
         subtitle_file = await message.download(
             file_name=f"sub_{user_id}.ass",
             progress=lambda current, total: asyncio.create_task(progress_bar(current, total, status_msg, action="Downloading"))
@@ -142,6 +148,11 @@ async def merge_subtitles_task(client, status_msg, user_id):
         process = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
         )
+        total = 100  # Simulating a progress bar for processing
+        for progress in range(0, total + 1, 10):
+            await asyncio.sleep(0.5)  # Simulate processing time
+            await progress_bar(progress, total, status_msg, action="Processing")
+
         await process.wait()
 
         if process.returncode != 0:
