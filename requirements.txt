@@ -1,6 +1,6 @@
 aiohttp
 TgCrypto
-ffmpeg-python
-ffmpeg
-git+https://github.com/seniorsolt/pyrogram.git@dev#egg=pyrogram
-youtube-dl
+pyrogram==2.0.106
+tqdm==4.66.5
+ffmpeg-python==0.2.0
+psutil==6.0.0
