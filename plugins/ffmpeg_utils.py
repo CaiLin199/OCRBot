@@ -1,8 +1,10 @@
 import os
 import subprocess
 import logging
+from datetime import datetime
 from .video_handler import user_data, logger
 from .cleanup import cleanup
+from .progress_handler import progress_bar
 
 async def merge_subtitles_task(client, message, user_id):
     data = user_data[user_id]
@@ -16,6 +18,8 @@ async def merge_subtitles_task(client, message, user_id):
     thumbnail = 'Assist/Images/thumbnail.jpg'
 
     try:
+        status_msg = await message.reply("Processing video...")
+        
         logger.info(f"Removing existing subtitles from video for user {user_id}")
         remove_subs_cmd = [
             "ffmpeg", "-i", video,
@@ -24,6 +28,7 @@ async def merge_subtitles_task(client, message, user_id):
         ]
         subprocess.run(remove_subs_cmd, check=True)
 
+        await status_msg.edit("Merging subtitles...")
         logger.info(f"Merging subtitles for user {user_id}: {output_file}")
         ffmpeg_cmd = [
             "ffmpeg", "-i", "removed_subtitles.mkv",
@@ -36,9 +41,21 @@ async def merge_subtitles_task(client, message, user_id):
         ]
         subprocess.run(ffmpeg_cmd, check=True)
 
+        await status_msg.edit("Starting upload...")
+        start_time = datetime.now()
+        
         async def upload_progress(current, total):
-            percent = (current / total) * 100
-            logger.info(f"Uploading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
+            try:
+                await progress_bar(
+                    current,
+                    total,
+                    status_msg,
+                    start_time,
+                    "Uploading Video",
+                    message.from_user.username or f"User_{user_id}"
+                )
+            except Exception as e:
+                logger.error(f"Progress update failed: {str(e)}")
 
         await message.reply_document(
             document=output_file,
@@ -47,9 +64,11 @@ async def merge_subtitles_task(client, message, user_id):
             progress=upload_progress
         )
 
+        await status_msg.edit("✅ Upload Complete!")
+
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to merge subtitles: {e}")
-        await message.reply(f"Error: {e}")
+        await status_msg.edit(f"❌ Error: {e}")
     finally:
         if os.path.exists("removed_subtitles.mkv"):
             os.remove("removed_subtitles.mkv")
@@ -62,18 +81,46 @@ async def extract_subtitles(client, message, user_id):
     output_ass = video_file.rsplit('.', 1)[0] + ".ass"
 
     try:
+        status_msg = await message.reply("Extracting subtitles...")
         logger.info(f"Extracting subtitles from {video_file}")
+        
         subprocess.run(["ffmpeg", "-i", video_file, "-map", "0:s:0", output_subtitle], check=True)
         logger.info(f"Subtitles extracted to {output_subtitle}")
 
         subprocess.run(["ffmpeg", "-i", output_subtitle, output_ass], check=True)
         logger.info(f"Subtitles converted to {output_ass}")
 
-        await message.reply_document(document=output_subtitle, caption="Here is the extracted subtitle file.")
-        await message.reply_document(document=output_ass, caption="Here is the converted ASS subtitle file.")
+        start_time = datetime.now()
+
+        async def upload_progress(current, total):
+            try:
+                await progress_bar(
+                    current,
+                    total,
+                    status_msg,
+                    start_time,
+                    "Uploading Subtitle",
+                    message.from_user.username or f"User_{user_id}"
+                )
+            except Exception as e:
+                logger.error(f"Progress update failed: {str(e)}")
+
+        await message.reply_document(
+            document=output_subtitle,
+            caption="Here is the extracted subtitle file.",
+            progress=upload_progress
+        )
+        
+        start_time = datetime.now()  # Reset start time for second upload
+        await message.reply_document(
+            document=output_ass,
+            caption="Here is the converted ASS subtitle file.",
+            progress=upload_progress
+        )
+
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to extract subtitles: {e}")
-        await message.reply(f"Error: {e}")
+        await status_msg.edit(f"❌ Error: {e}")
 
 async def generate_screenshot(client, message, user_id):
     data = user_data[user_id]
@@ -82,7 +129,9 @@ async def generate_screenshot(client, message, user_id):
     timestamp = "00:03:05"
 
     try:
+        status_msg = await message.reply("Generating screenshot...")
         logger.info(f"Generating screenshot from {video_file} at {timestamp}")
+        
         subprocess.run([
             "ffmpeg", "-ss", timestamp, "-i", video_file,
             "-frames:v", "1", "-q:v", "2",
@@ -90,7 +139,29 @@ async def generate_screenshot(client, message, user_id):
         ], check=True)
         logger.info(f"Screenshot saved to {screenshot_path}")
 
-        await message.reply_photo(photo=screenshot_path, caption="Here is the screenshot.")
+        start_time = datetime.now()
+
+        async def upload_progress(current, total):
+            try:
+                await progress_bar(
+                    current,
+                    total,
+                    status_msg,
+                    start_time,
+                    "Uploading Screenshot",
+                    message.from_user.username or f"User_{user_id}"
+                )
+            except Exception as e:
+                logger.error(f"Progress update failed: {str(e)}")
+
+        await message.reply_photo(
+            photo=screenshot_path,
+            caption="Here is the screenshot.",
+            progress=upload_progress
+        )
+        
+        await status_msg.edit("✅ Screenshot generated and uploaded!")
+
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to generate screenshot: {e}")
-        await message.reply(f"Error: {e}")
+        await status_msg.edit(f"❌ Error: {e}")
