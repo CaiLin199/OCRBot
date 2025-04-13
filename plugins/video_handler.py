@@ -4,6 +4,8 @@ from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot import Bot
 from config import OWNER_IDS
+from .progress_handler import progress_bar
+from datetime import datetime
 
 # Shared user data dictionary
 user_data = {}
@@ -23,11 +25,22 @@ async def handle_video(client, message):
     logger.info(f"Receiving video: {file_name} from {user_id}")
 
     try:
-        await message.reply("Video downloading...")
+        # Send initial message that will be updated with progress
+        status_msg = await message.reply("Video downloading...")
+        start_time = datetime.now()
 
         async def progress_log(current, total):
-            percent = (current / total) * 100
-            logger.info(f"Downloading: {current / (1024*1024):.2f}/{total / (1024*1024):.2f} MB ({percent:.2f}%) for user {user_id}")
+            try:
+                await progress_bar(
+                    current, 
+                    total, 
+                    status_msg, 
+                    start_time,
+                    "Downloading Video",
+                    message.from_user.username or f"User_{user_id}"
+                )
+            except Exception as e:
+                logger.error(f"Progress update failed: {str(e)}")
 
         video_file = await message.download(file_name=file_name, progress=progress_log)
 
@@ -44,7 +57,7 @@ async def handle_video(client, message):
             [InlineKeyboardButton("Extract Sub", callback_data=f"extract_{user_id}")],
             [InlineKeyboardButton("Generate Screenshot", callback_data=f"screenshot_{user_id}")]
         ]
-        await message.reply("Choose an action:", reply_markup=InlineKeyboardMarkup(buttons))
+        await status_msg.edit("Choose an action:", reply_markup=InlineKeyboardMarkup(buttons))
     except Exception as e:
         logger.error(f"Failed to download video: {e}")
         await message.reply(f"Error during download: {e}")
