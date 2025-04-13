@@ -7,13 +7,12 @@ from bot import Bot
 from config import OWNER_IDS
 from .progress_handler import progress_bar
 from datetime import datetime
-from .mode import is_auto_mode
+from .shared_data import user_data, is_auto_mode
 from .subtitle_encode import process_subtitle
 from .filename import convert_filename
 from .ffmpeg_utils import merge_subtitles_task
 
-# Shared user data dictionary
-user_data = {}
+# Configure logging
 logger = logging.getLogger(__name__)
 
 async def extract_subtitle(video_path):
@@ -114,5 +113,3 @@ async def handle_video(client, message):
     except Exception as e:
         logger.error(f"Video processing failed: {e}")
         await message.reply(f"❌ Error: {str(e)}")
-
-# Keep existing callback handlers for manual mode
