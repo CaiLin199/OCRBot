@@ -1,11 +1,7 @@
-import logging
 from pyrogram import filters
 from bot import Bot
 from config import OWNER_IDS
-from .shared_data import switch_mode
-
-# Configure logging
-logger = logging.getLogger(__name__)
+from .shared_data import switch_mode, logger
 
 @Bot.on_message(filters.user(OWNER_IDS) & filters.command("mode"))
 async def handle_mode_switch(client, message):
@@ -17,8 +13,6 @@ async def handle_mode_switch(client, message):
             f"✅ Mode switched to: {new_mode.upper()}\n"
             f"{'🤖 Automatic subtitle processing enabled' if new_mode == 'auto' else '👤 Manual subtitle processing enabled'}"
         )
-        
-        logger.info(f"Mode switched to {new_mode}")
         
     except Exception as e:
         logger.error(f"Error in switch_mode: {e}")
