@@ -1,7 +1,7 @@
 import os
 import asyncio
 import logging
-from pyrogram import filters, Client
+from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from queue import Queue
 import ffmpeg
@@ -84,9 +84,12 @@ async def handle_video(client, message):
         status_msg = await message.reply("Preparing to download...")
 
         # Download the video with a progress bar
+        loop = asyncio.get_event_loop()
         video_file = await message.download(
             file_name=f"vid_{user_id}.tmp",
-            progress=lambda current, total: asyncio.create_task(progress_bar(current, total, status_msg, action="Downloading"))
+            progress=lambda current, total: asyncio.run_coroutine_threadsafe(
+                progress_bar(current, total, status_msg, action="Downloading"), loop
+            )
         )
         logger.info(log_resources(f"Download complete ({video_file}): "))
 
@@ -109,9 +112,12 @@ async def handle_subtitle(client, message):
     user_id = message.from_user.id
     try:
         status_msg = await message.reply("Preparing to download subtitle...")
+        loop = asyncio.get_event_loop()
         subtitle_file = await message.download(
             file_name=f"sub_{user_id}.ass",
-            progress=lambda current, total: asyncio.create_task(progress_bar(current, total, status_msg, action="Downloading"))
+            progress=lambda current, total: asyncio.run_coroutine_threadsafe(
+                progress_bar(current, total, status_msg, action="Downloading"), loop
+            )
         )
         logger.info(log_resources(f"Subtitle downloaded ({subtitle_file}): "))
 
@@ -121,57 +127,6 @@ async def handle_subtitle(client, message):
     except Exception as e:
         logger.error(f"Subtitle upload failed: {e}")
         await status_msg.edit_text(f"Error during subtitle download: {e}")
-
-@Bot.on_message(filters.user(OWNER_IDS) & filters.text)
-async def handle_name_or_caption(client, message):
-    user_id = message.from_user.id
-    if user_id in user_data and user_data[user_id].get("step") == "subtitle":
-        new_name = message.text.strip()
-        user_data[user_id]["new_name"] = new_name
-        user_data[user_id]["caption"] = new_name
-        user_data[user_id]["step"] = "name"
-
-        status_msg = await message.reply("Processing video...")
-        task_queue.put((merge_subtitles_task, (client, status_msg, user_id)))
-    else:
-        await message.reply("Please start by sending a video.")
-
-async def merge_subtitles_task(client, status_msg, user_id):
-    data = user_data[user_id]
-    video, subtitle, new_name, caption = data["video"], data["subtitle"], data["new_name"], data["caption"]
-    output_file = f"out_{user_id}.mkv"
-
-    try:
-        cmd = [
-            "ffmpeg", "-i", video, "-i", subtitle, "-c", "copy", "-y", output_file
-        ]
-        process = await asyncio.create_subprocess_exec(
-            *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-        )
-        total = 100  # Simulating a progress bar for processing
-        for progress in range(0, total + 1, 10):
-            await asyncio.sleep(0.5)  # Simulate processing time
-            await progress_bar(progress, total, status_msg, action="Processing")
-
-        await process.wait()
-
-        if process.returncode != 0:
-            raise subprocess.CalledProcessError(process.returncode, cmd)
-
-        await status_msg.edit_text("Uploading video...")
-        await client.send_document(
-            chat_id=status_msg.chat.id,
-            document=output_file,
-            caption=caption,
-            progress=lambda current, total: asyncio.create_task(progress_bar(current, total, status_msg, action="Uploading"))
-        )
-        logger.info(log_resources(f"Uploaded merged video ({output_file}): "))
-    except Exception as e:
-        logger.error(f"Merge failed: {e}")
-        await status_msg.edit_text(f"Error during merge: {e}")
-    finally:
-        if os.path.exists(output_file):
-            os.remove(output_file)
 
 # Cleanup function
 async def cleanup(user_id):
