@@ -4,10 +4,13 @@ from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot import Bot
 from config import OWNER_IDS
-from .cleanup import cleanup
 
 # Shared user data dictionary
 user_data = {}
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 
 @Bot.on_message(
     filters.user(OWNER_IDS) &
@@ -45,3 +48,7 @@ async def handle_video(client, message):
     except Exception as e:
         logger.error(f"Failed to download video: {e}")
         await message.reply(f"Error during download: {e}")
+
+@Bot.on_message(filters.user(OWNER_IDS) & filters.command("merge"), group=0)
+async def start(client, message):
+    await message.reply("Send me a video file (MKV or MP4) to add subtitles.")
