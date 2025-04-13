@@ -1,19 +1,15 @@
 import os
 import asyncio
-import logging
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot import Bot
 from config import OWNER_IDS
 from .progress_handler import progress_bar
 from datetime import datetime
-from .shared_data import user_data, is_auto_mode
+from .shared_data import user_data, is_auto_mode, logger
 from .subtitle_encode import process_subtitle
 from .filename import convert_filename
 from .ffmpeg_utils import merge_subtitles_task
-
-# Configure logging
-logger = logging.getLogger(__name__)
 
 async def extract_subtitle(video_path):
     """Extract subtitle from video file to ASS format"""
