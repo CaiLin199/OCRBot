@@ -1,3 +1,7 @@
+import logging
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 # Shared user data dictionary
 user_data = {}
@@ -19,4 +23,5 @@ def switch_mode():
     current_mode = get_current_mode()
     new_mode = MANUAL_MODE if current_mode == AUTO_MODE else AUTO_MODE
     user_data["global_mode"] = new_mode
+    logger.info(f"Mode switched to {new_mode}")
     return new_mode
