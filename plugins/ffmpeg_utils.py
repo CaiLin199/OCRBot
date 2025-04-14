@@ -8,6 +8,7 @@ from config import DB_CHANNEL, MAIN_CHANNEL
 from .link_generation import generate_link
 from .channel_post import post_to_main_channel
 from .utils import humanbytes
+from .subtitle_utils import extract_subtitles
 
 async def merge_subtitles_task(client, message, user_id):
     data = user_data[user_id]
