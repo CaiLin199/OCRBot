@@ -1,7 +1,8 @@
 from pyrogram import filters
 from bot import Bot
 from .video_handler import user_data, logger
-from .ffmpeg_utils import extract_subtitles, generate_screenshot
+from .subtitle_utils import extract_subtitles
+from .screenshot_utils import generate_screenshot
 
 @Bot.on_callback_query(filters.regex(r"(merge|extract|screenshot)_(\d+)"))
 async def handle_button_click(client, callback_query):
