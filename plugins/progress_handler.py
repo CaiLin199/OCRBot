@@ -2,8 +2,7 @@ from datetime import datetime
 from pyrogram.types import Message
 from config import MAIN_CHANNEL
 
-# Add this function at the top level
-async def progress_bar(current, total, status_msg, start_time, status_text, filename):
+async def progress_bar(current, total, status_msg, start_time, status_text):
     """Show progress bar for operations"""
     try:
         now = datetime.now()
@@ -12,20 +11,34 @@ async def progress_bar(current, total, status_msg, start_time, status_text, file
         if diff == 0:
             return
             
-        speed = current / diff
+        speed = current / diff if diff > 0 else 0
         percentage = current * 100 / total
+        
+        # Calculate ETA
+        if speed > 0:
+            eta = (total - current) / speed
+            eta_hours = int(eta // 3600)
+            eta_minutes = int((eta % 3600) // 60)
+            eta_seconds = int(eta % 60)
+        else:
+            eta_hours = eta_minutes = eta_seconds = 0
+            
+        # Calculate elapsed time
+        elapsed_minutes = diff // 60
+        elapsed_seconds = diff % 60
         
         # Progress bar
         bar_length = 10
         filled_length = int(percentage / 100 * bar_length)
-        bar = '■' * filled_length + '□' * (bar_length - filled_length)
+        bar = '[' + '■' * filled_length + '□' * (bar_length - filled_length) + ']'
         
         # Format message
         status_text = (
-            f"**{status_text}**\n\n"
-            f"```{bar}``` {percentage:.1f}%\n"
-            f"⚡️ **Speed:** {humanbytes(speed)}/s\n"
-            f"📊 **Size:** {humanbytes(current)} / {humanbytes(total)}"
+            f"Progress: {bar} {percentage:.1f}%\n"
+            f"📥 {status_text}: {humanbytes(current)} | {humanbytes(total)}\n"
+            f"⚡️ Speed: {humanbytes(speed)}/s\n"
+            f"⌛ ETA: {eta_hours}h {eta_minutes}m {eta_seconds}s\n"
+            f"⏱️ Time elapsed: {elapsed_minutes}m {elapsed_seconds}s"
         )
         
         await status_msg.edit(status_text)
@@ -53,12 +66,12 @@ class ProgressHandler:
         self.last_update_time = datetime.now()
         self.update_interval = 7
 
-    async def init_messages(self, filename):
+    async def init_messages(self):
         """Initialize progress messages in both PM and channel"""
         self.status_msg = await self.user_message.reply("📥 Starting Download...")
         self.channel_msg = await self.client.send_message(
             MAIN_CHANNEL,            
-            f"Status: Initializing download..."
+            "Status: Initializing..."
         )
         self.start_time = datetime.now()
         return self.status_msg
@@ -68,29 +81,10 @@ class ProgressHandler:
         percentage = current * 100 / total
         bar_length = 10
         filled_length = int(percentage / 100 * bar_length)
-        bar = '■' * filled_length + '□' * (bar_length - filled_length)
+        bar = '[' + '■' * filled_length + '□' * (bar_length - filled_length) + ']'
         return bar, percentage
 
-    def get_progress_text(self, current, total, status, filename):
-        """Generate progress text with percentage and speed"""
-        now = datetime.now()
-        diff = (now - self.start_time).seconds
-        
-        speed = current / diff if diff > 0 else 0
-        bar, percentage = self.get_progress_bar(current, total)
-        
-        progress_text = (
-            f"🤖 **Bot Processing New File**\n\n"
-            f"**File:** `{filename}`\n"
-            f"**Status:** {status}\n\n"
-            f"```{bar}``` {percentage:.1f}%\n"
-            f"⚡️ **Speed:** {humanbytes(speed)}/s\n"
-            f"📊 **Size:** {humanbytes(current)} / {humanbytes(total)}"
-        )
-        
-        return progress_text
-
-    async def update_progress(self, current, total, status, filename):
+    async def update_progress(self, current, total, status):
         """Update progress in both PM and channel"""
         try:
             now = datetime.now()
@@ -99,41 +93,74 @@ class ProgressHandler:
             
             self.last_update_time = now
             
-            # Get progress text for channel
-            channel_text = self.get_progress_text(current, total, status, filename)
+            # Calculate times
+            diff = (now - self.start_time).seconds
+            speed = current / diff if diff > 0 else 0
             
-            # Get progress text for PM
+            # Calculate ETA
+            if speed > 0:
+                eta = (total - current) / speed
+                eta_hours = int(eta // 3600)
+                eta_minutes = int((eta % 3600) // 60)
+                eta_seconds = int(eta % 60)
+            else:
+                eta_hours = eta_minutes = eta_seconds = 0
+                
+            # Calculate elapsed time
+            elapsed_minutes = diff // 60
+            elapsed_seconds = diff % 60
+            
+            # Get progress bar
             bar, percentage = self.get_progress_bar(current, total)
-            speed = current / (now - self.start_time).seconds if (now - self.start_time).seconds > 0 else 0
             
-            pm_text = (
-                f"{status}\n\n"
-                f"```{bar}``` {percentage:.1f}%\n"
+            # Channel text
+            channel_text = (
+                f"Progress: {bar} {percentage:.1f}%\n"
+                f"📥 {status}: {humanbytes(current)} | {humanbytes(total)}\n"
                 f"⚡️ Speed: {humanbytes(speed)}/s\n"
-                f"📊 Size: to {humanbytes(current)} / {humanbytes(total)}"
+                f"⌛ ETA: {eta_hours}h {eta_minutes}m {eta_seconds}s\n"
+                f"⏱️ Time elapsed: {elapsed_minutes}m {elapsed_seconds}s"
             )
             
-            # Update both messages
+            # PM text (same format)
+            pm_text = channel_text
+            
+            # Update both messages with try-except for each
             if self.channel_msg:
-                await self.channel_msg.edit(channel_text)
+                try:
+                    await self.channel_msg.edit(channel_text)
+                except Exception as e:
+                    if "420 FLOOD_WAIT" not in str(e):
+                        print(f"Channel update failed: {str(e)}")
+                    
             if self.status_msg:
-                await self.status_msg.edit(pm_text)
+                try:
+                    await self.status_msg.edit(pm_text)
+                except Exception as e:
+                    if "420 FLOOD_WAIT" not in str(e):
+                        print(f"PM update failed: {str(e)}")
                 
         except Exception as e:
             print(f"Progress update failed: {str(e)}")
 
-    async def update_status(self, status, filename):
+    async def update_status(self, status):
         """Update processing status in both PM and channel"""
         try:
-            channel_text = (
-                
-                f"Status: {status}"
-            )
+            status_text = f"Status: {status}"
             
             if self.status_msg:
-                await self.status_msg.edit(f"{status}")
+                try:
+                    await self.status_msg.edit(status_text)
+                except Exception as e:
+                    if "420 FLOOD_WAIT" not in str(e):
+                        print(f"PM status update failed: {str(e)}")
+                    
             if self.channel_msg:
-                await self.channel_msg.edit(channel_text)
+                try:
+                    await self.channel_msg.edit(status_text)
+                except Exception as e:
+                    if "420 FLOOD_WAIT" not in str(e):
+                        print(f"Channel status update failed: {str(e)}")
         except Exception as e:
             print(f"Status update failed: {str(e)}")
 
@@ -142,10 +169,7 @@ class ProgressHandler:
         try:
             if self.channel_msg:
                 if not success:
-                    await self.channel_msg.edit(
-                        "❌ Process Failed\n\n"
-                        "Bot will retry automatically."
-                    )
+                    await self.channel_msg.edit("Process Failed")
                 await self.channel_msg.delete()
         except Exception as e:
             print(f"Failed to delete channel message: {str(e)}")
