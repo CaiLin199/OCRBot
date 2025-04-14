@@ -21,7 +21,7 @@ class ProgressTracker:
 
 _progress_trackers: Dict[str, ProgressTracker] = {}
 PROGRESS_BAR_LENGTH = 10
-UPDATE_INTERVAL = 2.0  # Update interval in seconds
+UPDATE_INTERVAL = 7.0  # Update interval in seconds
 
 async def progress_bar(current: int, total: int, message: Any, type_message: str = "") -> None:
     """
