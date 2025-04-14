@@ -5,8 +5,8 @@ from datetime import datetime
 from .video_handler import user_data, logger
 from .cleanup import cleanup
 from .progress_handler import (
-    StatusMessages, 
-    create_status_messages, 
+    StatusMessages,
+    create_status_messages,
     create_progress_callback,
     update_status_text,
     delete_channel_status
@@ -26,15 +26,26 @@ async def merge_subtitles_task(client, message, user_id):
     thumbnail = 'Assist/Images/thumbnail.jpg'
 
     try:
-        # Create single status message for both PM and channel
+        # Initialize status messages
         status_messages = await create_status_messages(client, message, MAIN_CHANNEL)
         if not status_messages:
             return await message.reply("Failed to initialize status messages.")
 
-        # Process video (no progress bar needed for processing)
-        await update_status_text(status_messages, "Processing Video...")
+        # Download video with progress
+        start_time = datetime.now()
+        download_callback = create_progress_callback(status_messages, start_time, "Downloading Video")
         
-        logger.info(f"Processing video for user {user_id}")
+        # If video is a message, download it
+        if hasattr(video, 'file_id'):
+            await update_status_text(status_messages, "Starting Download...")
+            video_path = await client.download_media(
+                message=video,
+                progress=download_callback
+            )
+            video = video_path if video_path else video
+
+        # Process video (no progress bar needed)
+        await update_status_text(status_messages, "Removing Existing Subtitles...")
         remove_subs_cmd = [
             "ffmpeg", "-i", video,
             "-map", "0:v", "-map", "0:a?",
@@ -56,14 +67,15 @@ async def merge_subtitles_task(client, message, user_id):
         subprocess.run(ffmpeg_cmd, check=True)
 
         # Upload with progress bar
+        await update_status_text(status_messages, "Preparing Upload...")
         start_time = datetime.now()
-        callback = create_progress_callback(status_messages, start_time, "Uploading Video")
+        upload_callback = create_progress_callback(status_messages, start_time, "Uploading Video")
         
         sent_message = await message.reply_document(
             document=output_file,
             caption=caption,
             thumb=thumbnail,
-            progress=callback
+            progress=upload_callback
         )
 
         # Save to DB_CHANNEL and generate link
@@ -76,22 +88,34 @@ async def merge_subtitles_task(client, message, user_id):
                     f"<b>🔗 Shareable Link:</b>\n\n{link}",
                     reply_markup=reply_markup
                 )
+                # Post to main channel and delete progress message
                 await post_to_main_channel(client, new_name, link)
-                # Delete progress message after posting to channel
                 await delete_channel_status(status_messages.channel)
+                await status_messages.pm.edit_text(
+                    f"✅ Process Complete!\n"
+                    f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+                )
                 
         except Exception as e:
             logger.error(f"Failed to save to DB_CHANNEL or generate link: {e}")
 
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to merge subtitles: {e}")
-        await update_status_text(status_messages, f"❌ Error: {str(e)}")
+        if status_messages:
+            error_text = (
+                f"❌ Error occurred!\n\n"
+                f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+                f"▫️ Error: {str(e)}"
+            )
+            await update_status_text(status_messages, error_text)
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
     finally:
         if os.path.exists("removed_subtitles.mkv"):
             os.remove("removed_subtitles.mkv")
         cleanup(user_id)
 
-# Simple functions without progress bar
+# Simple functions without progress bars
 async def extract_subtitles(client, message, user_id):
     data = user_data[user_id]
     video_file = data["video"]
