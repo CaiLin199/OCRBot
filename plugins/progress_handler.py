@@ -8,95 +8,126 @@ logger = logging.getLogger(__name__)
 # Store the last update time
 last_update_time = {}
 
-async def progress_bar(current, total, status_msg, start_time, action="Processing", user_login=None):
+class StatusMessages:
+    def __init__(self, pm_message, channel_message):
+        self.pm = pm_message
+        self.channel = channel_message
+
+async def progress_bar(current, total, messages: StatusMessages, start_time, action="Processing"):
     """
-    Enhanced progress bar for Telegram file operations with timestamp, user info, speed and ETA
-    Fixed width progress bar to prevent line wrapping
+    Enhanced progress bar with different formats for PM and channel
     """
     try:
-        # Get the current time
         now = datetime.now()
-        
-        # Get the last update time for this message
-        msg_id = f"{status_msg.chat.id}_{status_msg.id}"
+        msg_id = f"{messages.pm.chat.id}_{messages.pm.id}"
         last_time = last_update_time.get(msg_id, 0)
         
-        # Check if enough time has passed since the last update (4 seconds)
-        if (now.timestamp() - last_time) < 4:
+        # Update only every 3 seconds
+        if (now.timestamp() - last_time) < 3:
             return
             
         diff = (now - start_time).total_seconds()
-        
         if diff == 0:
             return
             
+        # Calculate metrics
         speed = current / diff
         progress_percent = current * 100 / total
         eta = (total - current) / speed if speed > 0 else 0
         
-        # Fixed width progress bar (15 characters to prevent wrapping)
-        bar_length = 15
+        # Progress bar visualization
+        bar_length = 20
         filled_length = int(bar_length * current // total)
         bar = "█" * filled_length + "-" * (bar_length - filled_length)
         
-        # Calculate sizes in MB
+        # Size calculations
         current_mb = current / (1024 * 1024)
         total_mb = total / (1024 * 1024)
         speed_mb = speed / (1024 * 1024)
         
-        # Get current UTC time
-        current_time = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-        
-        # Fixed width format to prevent line wrapping
-        progress_text = (
-            f"⌚ Time: {current_time} UTC\n"
-            f"👤 User: {user_login}\n"
-            f"🔄 {action}...\n"
-            f"[{bar}] {progress_percent:5.1f}%\n"  # Fixed width percentage
-            f"💾 Size: {current_mb:7.1f}MB / {total_mb:7.1f}MB\n"  # Fixed width sizes
-            f"⚡ Speed: {speed_mb:7.1f} MB/s\n"  # Fixed width speed
-            f"⏱ ETA: {eta:5.1f}s"  # Fixed width ETA
+        # Channel message format (focused on progress metrics)
+        channel_text = (
+            f"🎬 {action}\n\n"
+            f"▫️ Progress: [{bar}]\n"
+            f"▫️ Complete: {progress_percent:.1f}%\n"
+            f"▫️ Speed: {speed_mb:.1f} MB/s\n"
+            f"▫️ Size: {current_mb:.1f}MB / {total_mb:.1f}MB\n"
+            f"▫️ ETA: {eta:.1f}s"
         )
         
-        await status_msg.edit_text(progress_text)
+        # PM message format (more detailed)
+        pm_text = (
+            f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+            f"🔄 {action}...\n"
+            f"[{bar}] {progress_percent:.1f}%\n"
+            f"💾 Size: {current_mb:.1f}MB / {total_mb:.1f}MB\n"
+            f"⚡ Speed: {speed_mb:.1f} MB/s\n"
+            f"⏱ ETA: {eta:.1f}s"
+        )
         
-        # Update the last update time
+        # Update messages
+        try:
+            await messages.pm.edit_text(pm_text)
+        except Exception as e:
+            if "message is not modified" not in str(e).lower():
+                logger.error(f"PM update failed: {e}")
+        
+        try:
+            await messages.channel.edit_text(channel_text)
+        except Exception as e:
+            if "message is not modified" not in str(e).lower():
+                logger.error(f"Channel update failed: {e}")
+        
         last_update_time[msg_id] = now.timestamp()
         
-        # Cleanup old messages periodically
-        if len(last_update_time) > 100:  # Arbitrary threshold
-            cleanup_old_messages()
-            
     except Exception as e:
-        logger.error(f"Failed to update progress bar: {e}")
-        try:
-            if str(e).find("FLOOD_WAIT") == -1:  # Only show error if it's not a flood wait
-                await status_msg.edit_text(f"Error during {action.lower()} progress: {e}")
-        except:
-            pass
+        logger.error(f"Progress update failed: {e}")
 
-def create_progress_callback(status_msg, start_time, action, user_login):
+async def update_status_text(messages: StatusMessages, action: str):
     """
-    Creates a progress callback function for use with asyncio.run_coroutine_threadsafe
+    Update status text without progress bar
+    """
+    channel_text = f"🎬 {action}\n\nPreparing..."
+    pm_text = f"⌚ {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n🔄 {action}..."
+    
+    try:
+        await messages.pm.edit_text(pm_text)
+        await messages.channel.edit_text(channel_text)
+    except Exception as e:
+        logger.error(f"Status update failed: {e}")
+
+async def create_status_messages(client, user_message, channel_id):
+    """
+    Create initial status messages
+    """
+    try:
+        pm_msg = await user_message.reply("Initializing...")
+        channel_msg = await client.send_message(channel_id, "🎬 Initializing...")
+        return StatusMessages(pm_msg, channel_msg)
+    except Exception as e:
+        logger.error(f"Failed to create status messages: {e}")
+        return None
+
+def create_progress_callback(messages: StatusMessages, start_time, action):
+    """
+    Create progress callback for file operations
     """
     loop = asyncio.get_event_loop()
     
     def callback(current, total):
         return asyncio.run_coroutine_threadsafe(
-            progress_bar(current, total, status_msg, start_time, action=action, user_login=user_login),
+            progress_bar(current, total, messages, start_time, action),
             loop
         )
     
     return callback
 
-def cleanup_old_messages():
+async def delete_channel_status(message):
     """
-    Remove old message timestamps to prevent memory leaks
+    Delete channel status message
     """
-    current_time = datetime.now().timestamp()
-    to_remove = []
-    for msg_id, last_time in last_update_time.items():
-        if (current_time - last_time) > 3600:  # Remove entries older than 1 hour
-            to_remove.append(msg_id)
-    for msg_id in to_remove:
-        last_update_time.pop(msg_id, None)
+    try:
+        if message:
+            await message.delete()
+    except Exception as e:
+        logger.error(f"Failed to delete channel message: {e}")
