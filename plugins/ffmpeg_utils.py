@@ -1,118 +1,99 @@
 import os
-import asyncio
+import subprocess
 import logging
 from datetime import datetime
-from .video_handler import user_data
+from .video_handler import user_data, logger
 from .cleanup import cleanup
-from .progress_handler import StatusMessages, create_progress_callback, update_status
+from .progress_handler import progress_bar
 from config import DB_CHANNEL
 from .link_generation import generate_link
 from .channel_post import post_to_main_channel
 
-logger = logging.getLogger(__name__)
-
-async def merge_subtitles_task(client, message, user_id: str) -> None:
-    """Merge subtitles into video"""
-    data = user_data.get(user_id, {})
-    if not data:
-        await message.reply("❌ Please start over")
-        return
-
-    video = data.get("video")
-    subtitle = data.get("subtitle")
-    new_name = data.get("new_name")
-    caption = data.get("caption")
-    
-    if not all([video, subtitle, new_name]):
-        await message.reply("❌ Missing data, please try again")
-        return
-
+async def merge_subtitles_task(client, message, user_id):
+    data = user_data[user_id]
+    video = data["video"]
+    subtitle = data["subtitle"]
+    new_name = data["new_name"]
+    caption = data["caption"]
     output_file = f"{new_name}.mkv"
-    font_path = 'Assist/Font/OathBold.otf'
-    thumbnail_path = 'Assist/Images/thumbnail.jpg'
-    temp_files = []
-    status_msg = None
+
+    font = 'Assist/Font/OathBold.otf'
+    thumbnail = 'Assist/Images/thumbnail.jpg'
 
     try:
-        status_msg = await message.reply("🎬 Starting...")
-        messages = StatusMessages(status_msg, None)
-
-        # Download video if needed
-        video_path = video
-        if hasattr(video, 'file_id'):
-            video_path = await client.download_media(
-                message=video,
-                progress=create_progress_callback(messages, "Downloading")
-            )
-            temp_files.append(video_path)
-
-        # Remove existing subtitles
-        await update_status(messages, "🔄 Processing...")
-        temp_no_subs = "temp_no_subs.mkv"
-        temp_files.append(temp_no_subs)
+        status_msg = await message.reply("Processing video...")
         
-        process = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y",
-            "-i", video_path,
+        logger.info(f"Removing existing subtitles from video for user {user_id}")
+        remove_subs_cmd = [
+            "ffmpeg", "-i", video,
             "-map", "0:v", "-map", "0:a?",
-            "-c", "copy",
-            temp_no_subs,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await process.communicate()
+            "-c", "copy", "-y", "removed_subtitles.mkv"
+        ]
+        subprocess.run(remove_subs_cmd, check=True)
 
-        # Merge subtitles
-        await update_status(messages, "🔄 Adding subtitles...")
-        process = await asyncio.create_subprocess_exec(
-            "ffmpeg", "-y",
-            "-i", temp_no_subs,
+        await status_msg.edit("Merging subtitles...")
+        logger.info(f"Merging subtitles for user {user_id}: {output_file}")
+        ffmpeg_cmd = [
+            "ffmpeg", "-i", "removed_subtitles.mkv",
             "-i", subtitle,
-            "-attach", font_path,
-            "-metadata:s:t:0", "mimetype=application/x-font-otf",
+            "-attach", font, "-metadata:s:t:0", "mimetype=application/x-font-otf",
             "-map", "0", "-map", "1",
             "-metadata:s:s:0", "title=HeavenlySubs",
-            "-metadata:s:s:0", "language=eng",
-            "-disposition:s:s:0", "default",
-            "-c", "copy",
-            output_file,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        await process.communicate()
+            "-metadata:s:s:0", "language=eng", "-disposition:s:s:0", "default",
+            "-c", "copy", output_file
+        ]
+        subprocess.run(ffmpeg_cmd, check=True)
 
-        # Upload
-        await update_status(messages, "📤 Uploading...")
+        await status_msg.edit("Starting upload...")
+        start_time = datetime.now()
+        
+        async def upload_progress(current, total):
+            try:
+                await progress_bar(
+                    current,
+                    total,
+                    status_msg,
+                    start_time,
+                    "Uploading Video",
+                    message.from_user.username or f"User_{user_id}"
+                )
+            except Exception as e:
+                logger.error(f"Progress update failed: {str(e)}")
+
+        # Send to user
         sent_message = await message.reply_document(
             document=output_file,
             caption=caption,
-            thumb=thumbnail_path,
-            progress=create_progress_callback(messages, "Uploading")
+            thumb=thumbnail,
+            progress=upload_progress
         )
 
-        # Save to DB and generate link
-        if DB_CHANNEL:
+        # Save to DB_CHANNEL and generate link
+        try:
+            # Save copy to DB_CHANNEL
             db_msg = await sent_message.copy(chat_id=DB_CHANNEL)
-            link, reply_markup = await generate_link(client, db_msg)
+            logger.info(f"File saved to DB_CHANNEL: {output_file}")
             
+            # Generate shareable link
+            link, reply_markup = await generate_link(client, db_msg)
             if link:
                 await message.reply_text(
-                    f"<b>🔗 Here's your link:</b>\n\n{link}",
+                    f"<b>🔗 Shareable Link:</b>\n\n{link}",
                     reply_markup=reply_markup
-                )
+                )                
+                
+                # Post to main channel
                 await post_to_main_channel(client, new_name, link)
-                await update_status(messages, "✅ Done!")
+                            
+        except Exception as e:
+            logger.error(f"Failed to save to DB_CHANNEL or generate link: {e}")
 
-    except Exception as e:
-        if status_msg:
-            await update_status(messages, f"❌ Error: {str(e)}")
-    
+        await status_msg.edit("✅ Upload Complete!")
+
+    except subprocess.CalledProcessError as e:
+        logger.error(f"Failed to merge subtitles: {e}")
+        await status_msg.edit(f"❌ Error: {e}")
     finally:
-        # Cleanup
-        for temp_file in temp_files:
-            try:
-                if os.path.exists(temp_file):
-                    os.remove(temp_file)
-            except:
-                pass
+        if os.path.exists("removed_subtitles.mkv"):
+            os.remove("removed_subtitles.mkv")
         cleanup(user_id)
