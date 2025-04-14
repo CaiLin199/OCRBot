@@ -9,6 +9,7 @@ from .shared_data import user_data, is_auto_mode, logger
 from .subtitle_encode import process_subtitle
 from .filename import convert_filename
 from .ffmpeg_utils import merge_subtitles_task
+from .subtitle_utils import extract_subtitles
 
 @Bot.on_message(
     filters.user(OWNER_IDS) &
