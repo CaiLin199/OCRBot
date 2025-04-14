@@ -81,6 +81,28 @@ async def merge_subtitles_task(client, message, user_id):
                     f"<b>🔗 Shareable Link:</b>\n\n{link}",
                     reply_markup=reply_markup
                 )
+
+                #send post to main channel
+                from .channel_post import post_to_main_channel
+
+# In merge_subtitles_task:
+        try:
+            db_msg = await sent_message.copy(chat_id=DB_CHANNEL)
+            logger.info(f"File saved to DB_CHANNEL: {output_file}")
+            
+            # Generate shareable link
+            link, reply_markup = await generate_link(client, db_msg)
+            if link:
+                await message.reply_text(
+                    f"<b>🔗 Shareable Link:</b>\n\n{link}",
+                    reply_markup=reply_markup
+                )
+                
+                # Post to main channel
+                await post_to_main_channel(client, new_name, link)
+                
+        except Exception as e:
+            logger.error(f"Failed to save to DB_CHANNEL or generate link: {e}")
             
         except Exception as e:
             logger.error(f"Failed to save to DB_CHANNEL or generate link: {e}")
