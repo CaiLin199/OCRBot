@@ -1,114 +1,105 @@
-import logging
-import asyncio
 from datetime import datetime
+from pyrogram.types import Message
+from config import MAIN_CHANNEL
 
-# Configure logging
-logger = logging.getLogger(__name__)
+class ProgressHandler:
+    def __init__(self, client, user_message):
+        self.client = client
+        self.user_message = user_message
+        self.channel_msg = None
+        self.status_msg = None
+        self.start_time = None
+        self.last_update_time = datetime.now()
+        self.update_interval = 2  # Update every 2 seconds to avoid flood
 
-# Store the last update time
-last_update_time = {}
+    async def init_messages(self):
+        """Initialize progress messages in both PM and channel"""
+        self.status_msg = await self.user_message.reply("📥 Starting Download...")
+        self.channel_msg = await self.client.send_message(
+            MAIN_CHANNEL,
+            "🔄 **New File Processing Started**\n\n💫 Initializing download..."
+        )
+        self.start_time = datetime.now()
+        return self.status_msg
 
-async def update_status(status_msg, text, channel_message=None):
-    """
-    Updates status message in both PM and channel if exists
-    """
-    try:
-        await status_msg.edit_text(text)
-        if hasattr(status_msg, 'channel_message') and status_msg.channel_message:
-            await status_msg.channel_message.edit_text(text)
-    except Exception as e:
-        logger.error(f"Failed to update status: {e}")
-
-async def progress_bar(current, total, status_msg, start_time, action="Processing", user_login=None):
-    """
-    Enhanced progress bar for Telegram file operations with timestamp, user info, speed and ETA
-    Fixed width progress bar to prevent line wrapping
-    """
-    try:
-        # Get the current time
+    def get_progress_text(self, current, total, status):
+        """Generate progress text with percentage and speed"""
         now = datetime.now()
+        diff = (now - self.start_time).seconds
         
-        # Get the last update time for this message
-        msg_id = f"{status_msg.chat.id}_{status_msg.id}"
-        last_time = last_update_time.get(msg_id, 0)
+        # Calculate speed and progress
+        speed = current / diff if diff > 0 else 0
+        percentage = (current * 100) / total
         
-        # Check if enough time has passed since the last update (7 seconds)
-        if (now.timestamp() - last_time) < 7:
-            return
-            
-        diff = (now - start_time).total_seconds()
+        # Format progress bar
+        bar_length = 10
+        filled_length = int(percentage / 100 * bar_length)
+        bar = '■' * filled_length + '□' * (bar_length - filled_length)
         
-        if diff == 0:
-            return
-            
-        speed = current / diff
-        progress_percent = current * 100 / total
-        eta = (total - current) / speed if speed > 0 else 0
+        progress_text = f"🔄 **New File Processing**\n\n"
+        progress_text += f"**{status}**\n"
+        progress_text += f"```{bar}``` {percentage:.1f}%\n\n"
+        progress_text += f"⚡️ **Speed:** {self.humanbytes(speed)}/s\n"
+        progress_text += f"📊 **Progress:** {self.humanbytes(current)} / {self.humanbytes(total)}"
         
-        # Fixed width progress bar (15 characters to prevent wrapping)
-        bar_length = 8
-        filled_length = int(bar_length * current // total)
-        bar = "█" * filled_length + "-" * (bar_length - filled_length)
-        
-        # Calculate sizes in MB
-        current_mb = current / (1024 * 1024)
-        total_mb = total / (1024 * 1024)
-        speed_mb = speed / (1024 * 1024)
-        
-        # Get current UTC time
-        current_time = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-        
-        # Fixed width format to prevent line wrapping
-        progress_text = (
-            f"⌚ Time: {current_time} UTC\n"
-            f"👤 User: {user_login}\n"
-            f"🔄 {action}...\n"
-            f"[{bar}] {progress_percent:5.1f}%\n"  # Fixed width percentage
-            f"💾 Size: {current_mb:7.1f}MB / {total_mb:7.1f}MB\n"  # Fixed width sizes
-            f"⚡ Speed: {speed_mb:7.1f} MB/s\n"  # Fixed width speed
-            f"⏱ ETA: {eta:5.1f}s"  # Fixed width ETA
-        )
-        
-        # Update in PM and channel
-        await update_status(status_msg, progress_text)
-        
-        # Update the last update time
-        last_update_time[msg_id] = now.timestamp()
-        
-        # Cleanup old messages periodically
-        if len(last_update_time) > 100:  # Arbitrary threshold
-            cleanup_old_messages()
-            
-    except Exception as e:
-        logger.error(f"Failed to update progress bar: {e}")
+        return progress_text
+
+    async def update_progress(self, current, total, status="Downloading"):
+        """Update progress in both PM and channel"""
         try:
-            if str(e).find("FLOOD_WAIT") == -1:  # Only show error if it's not a flood wait
-                await update_status(status_msg, f"Error during {action.lower()} progress: {e}")
-        except:
-            pass
+            now = datetime.now()
+            # Only update if enough time has passed since last update
+            if (now - self.last_update_time).seconds < self.update_interval:
+                return
+            
+            self.last_update_time = now
+            progress_text = self.get_progress_text(current, total, status)
+            
+            # Update channel message
+            if self.channel_msg:
+                await self.channel_msg.edit(progress_text)
+            
+            # Update PM message with more detailed progress
+            if self.status_msg:
+                await self.status_msg.edit(
+                    f"{status}\n\n"
+                    f"📊 **Progress:** {current * 100 / total:.1f}%\n"
+                    f"📦 **Size:** {self.humanbytes(current)} / {self.humanbytes(total)}\n"
+                    f"⚡️ **Speed:** {self.humanbytes(current/(now - self.start_time).seconds)}/s"
+                )
+                
+        except Exception as e:
+            print(f"Progress update failed: {str(e)}")
 
-def create_progress_callback(status_msg, start_time, action, user_login):
-    """
-    Creates a progress callback function for use with asyncio.run_coroutine_threadsafe
-    """
-    loop = asyncio.get_event_loop()
-    
-    def callback(current, total):
-        return asyncio.run_coroutine_threadsafe(
-            progress_bar(current, total, status_msg, start_time, action=action, user_login=user_login),
-            loop
-        )
-    
-    return callback
+    async def update_status(self, text):
+        """Update status messages with new text"""
+        try:
+            if self.status_msg:
+                await self.status_msg.edit(text)
+            if self.channel_msg:
+                await self.channel_msg.edit(
+                    f"🔄 **New File Processing**\n\n"
+                    f"**Status:** {text}"
+                )
+        except Exception as e:
+            print(f"Status update failed: {str(e)}")
 
-def cleanup_old_messages():
-    """
-    Remove old message timestamps to prevent memory leaks
-    """
-    current_time = datetime.now().timestamp()
-    to_remove = []
-    for msg_id, last_time in last_update_time.items():
-        if (current_time - last_time) > 3600:  # Remove entries older than 1 hour
-            to_remove.append(msg_id)
-    for msg_id in to_remove:
-        last_update_time.pop(msg_id, None)
+    async def finished(self):
+        """Clean up channel message when process is complete"""
+        try:
+            if self.channel_msg:
+                await self.channel_msg.delete()
+        except Exception as e:
+            print(f"Failed to delete channel message: {str(e)}")
+
+    @staticmethod
+    def humanbytes(size):
+        """Convert bytes to human readable format"""
+        if not size:
+            return "0B"
+        units = ['B', 'KB', 'MB', 'GB', 'TB']
+        index = 0
+        while size >= 1024 and index < len(units) - 1:
+            size /= 1024
+            index += 1
+        return f"{size:.2f}{units[index]}"
