@@ -2,6 +2,47 @@ from datetime import datetime
 from pyrogram.types import Message
 from config import MAIN_CHANNEL
 
+# Add this function at the top level
+async def progress_bar(current, total, status_msg, start_time, status_text, filename):
+    """Show progress bar for operations"""
+    try:
+        now = datetime.now()
+        diff = (now - start_time).seconds
+        
+        if diff == 0:
+            return
+            
+        speed = current / diff
+        percentage = current * 100 / total
+        
+        # Progress bar
+        bar_length = 10
+        filled_length = int(percentage / 100 * bar_length)
+        bar = '■' * filled_length + '□' * (bar_length - filled_length)
+        
+        # Format message
+        status_text = (
+            f"**{status_text}**\n\n"
+            f"```{bar}``` {percentage:.1f}%\n"
+            f"⚡️ **Speed:** {humanbytes(speed)}/s\n"
+            f"📊 **Size:** {humanbytes(current)} / {humanbytes(total)}"
+        )
+        
+        await status_msg.edit(status_text)
+    except Exception as e:
+        print(f"Progress update failed: {str(e)}")
+
+def humanbytes(size):
+    """Convert bytes to human readable format"""
+    if not size:
+        return "0B"
+    units = ['B', 'KB', 'MB', 'GB', 'TB']
+    index = 0
+    while size >= 1024 and index < len(units) - 1:
+        size /= 1024
+        index += 1
+    return f"{size:.2f}{units[index]}"
+
 class ProgressHandler:
     def __init__(self, client, user_message):
         self.client = client
@@ -45,8 +86,8 @@ class ProgressHandler:
             f"**File:** `{filename}`\n"
             f"**Status:** {status}\n\n"
             f"```{bar}``` {percentage:.1f}%\n"
-            f"⚡️ **Speed:** {self.humanbytes(speed)}/s\n"
-            f"📊 **Size:** {self.humanbytes(current)} / {self.humanbytes(total)}"
+            f"⚡️ **Speed:** {humanbytes(speed)}/s\n"
+            f"📊 **Size:** {humanbytes(current)} / {humanbytes(total)}"
         )
         
         return progress_text
@@ -70,8 +111,8 @@ class ProgressHandler:
             pm_text = (
                 f"**{status}**\n\n"
                 f"```{bar}``` {percentage:.1f}%\n"
-                f"⚡️ **Speed:** {self.humanbytes(speed)}/s\n"
-                f"📊 **Size:** {self.humanbytes(current)} / {self.humanbytes(total)}"
+                f"⚡️ **Speed:** {humanbytes(speed)}/s\n"
+                f"📊 **Size:** {humanbytes(current)} / {humanbytes(total)}"
             )
             
             # Update both messages
@@ -111,15 +152,3 @@ class ProgressHandler:
                 await self.channel_msg.delete()
         except Exception as e:
             print(f"Failed to delete channel message: {str(e)}")
-
-    @staticmethod
-    def humanbytes(size):
-        """Convert bytes to human readable format"""
-        if not size:
-            return "0B"
-        units = ['B', 'KB', 'MB', 'GB', 'TB']
-        index = 0
-        while size >= 1024 and index < len(units) - 1:
-            size /= 1024
-            index += 1
-        return f"{size:.2f}{units[index]}"
