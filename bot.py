@@ -4,6 +4,8 @@ from pyrogram import Client
 from pyrogram.enums import ParseMode
 import sys
 from datetime import datetime
+import pyrogram.utils
+pyrogram.utils.MIN_CHANNEL_ID = -1009147483647
 
 from config import API_HASH, API_ID, LOGGER, TELEGRAM_TOKEN, TG_BOT_WORKERS, PORT
 
