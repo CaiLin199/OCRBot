@@ -2,3 +2,4 @@ aiohttp
 TgCrypto
 git+https://github.com/AbidAbdullah1425/pyrogram.git@dev#egg=pyrogram
 ffmpeg-python==0.2.0
+humanbytes
