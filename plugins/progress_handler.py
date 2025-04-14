@@ -51,16 +51,14 @@ class ProgressHandler:
         self.status_msg = None
         self.start_time = None
         self.last_update_time = datetime.now()
-        self.update_interval = 2  # Update every 2 seconds to avoid flood
+        self.update_interval = 7
 
     async def init_messages(self, filename):
         """Initialize progress messages in both PM and channel"""
         self.status_msg = await self.user_message.reply("📥 Starting Download...")
         self.channel_msg = await self.client.send_message(
-            MAIN_CHANNEL,
-            f"🤖 **Bot Processing New File**\n\n"
-            f"**File:** `{filename}`\n"
-            f"**Status:** Initializing download..."
+            MAIN_CHANNEL,            
+            f"Status: Initializing download..."
         )
         self.start_time = datetime.now()
         return self.status_msg
@@ -109,10 +107,10 @@ class ProgressHandler:
             speed = current / (now - self.start_time).seconds if (now - self.start_time).seconds > 0 else 0
             
             pm_text = (
-                f"**{status}**\n\n"
+                f"{status}\n\n"
                 f"```{bar}``` {percentage:.1f}%\n"
-                f"⚡️ **Speed:** {humanbytes(speed)}/s\n"
-                f"📊 **Size:** {humanbytes(current)} / {humanbytes(total)}"
+                f"⚡️ Speed: {humanbytes(speed)}/s\n"
+                f"📊 Size: to {humanbytes(current)} / {humanbytes(total)}"
             )
             
             # Update both messages
@@ -128,13 +126,12 @@ class ProgressHandler:
         """Update processing status in both PM and channel"""
         try:
             channel_text = (
-                f"🤖 **Bot Processing New File**\n\n"
-                f"**File:** `{filename}`\n"
-                f"**Status:** {status}"
+                
+                f"Status: {status}"
             )
             
             if self.status_msg:
-                await self.status_msg.edit(f"**{status}**")
+                await self.status_msg.edit(f"{status}")
             if self.channel_msg:
                 await self.channel_msg.edit(channel_text)
         except Exception as e:
@@ -146,7 +143,7 @@ class ProgressHandler:
             if self.channel_msg:
                 if not success:
                     await self.channel_msg.edit(
-                        "❌ **Process Failed**\n\n"
+                        "❌ Process Failed\n\n"
                         "Bot will retry automatically."
                     )
                 await self.channel_msg.delete()
