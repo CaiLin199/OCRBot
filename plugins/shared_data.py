@@ -10,6 +10,19 @@ user_data = {}
 AUTO_MODE = "auto"
 MANUAL_MODE = "manual"
 
+async def progress_bar(current, total, message, start_time=None, operation=None, username=None):
+    """Progress bar that accepts extra parameters but maintains simple functionality"""
+    try:
+        percent = (current * 100 / total) if total > 0 else 0
+        current_mb = current / (1024 * 1024)
+        total_mb = total / (1024 * 1024)
+        
+        status = f"Processing: {percent:.1f}%\n{current_mb:.1f} MB / {total_mb:.1f} MB"
+        await message.edit(status)
+            
+    except Exception as e:
+        logger.error(f"Progress update failed: {str(e)}")
+
 def get_current_mode():
     """Get the current mode. Always defaults to AUTO_MODE if not set"""
     return user_data.get("global_mode", AUTO_MODE)
