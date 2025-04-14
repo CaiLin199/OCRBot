@@ -7,6 +7,7 @@ from .cleanup import cleanup
 from .progress_handler import progress_bar
 from config import DB_CHANNEL
 from .link_generation import generate_link
+from .channel_post import post_to_main_channel
 
 async def merge_subtitles_task(client, message, user_id):
     data = user_data[user_id]
