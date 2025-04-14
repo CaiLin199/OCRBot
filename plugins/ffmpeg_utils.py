@@ -6,6 +6,7 @@ from .video_handler import user_data, logger
 from .cleanup import cleanup
 from .progress_handler import progress_bar
 from config import DB_CHANNEL
+from .link_generation import generate_link
 
 async def merge_subtitles_task(client, message, user_id):
     data = user_data[user_id]
@@ -66,12 +67,22 @@ async def merge_subtitles_task(client, message, user_id):
             progress=upload_progress
         )
 
-        # Save copy of the message to DB_CHANNEL
+        # Save to DB_CHANNEL and generate link
         try:
-            await sent_message.copy(chat_id=DB_CHANNEL)
+            # Save copy to DB_CHANNEL
+            db_msg = await sent_message.copy(chat_id=DB_CHANNEL)
             logger.info(f"File saved to DB_CHANNEL: {output_file}")
+            
+            # Generate shareable link
+            link, reply_markup = await generate_link(client, db_msg)
+            if link:
+                await message.reply_text(
+                    f"<b>🔗 Shareable Link:</b>\n\n{link}",
+                    reply_markup=reply_markup
+                )
+            
         except Exception as e:
-            logger.error(f"Failed to save to DB_CHANNEL: {e}")
+            logger.error(f"Failed to save to DB_CHANNEL or generate link: {e}")
 
         await status_msg.edit("✅ Upload Complete!")
 
