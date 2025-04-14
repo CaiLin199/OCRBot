@@ -11,6 +11,36 @@ from .filename import convert_filename
 from .ffmpeg_utils import merge_subtitles_task
 
 
+
+async def extract_subtitle(video_path):
+    """Extract subtitle from video file to ASS format"""
+    try:
+        output_path = video_path.rsplit('.', 1)[0] + ".ass"
+        cmd = [
+            "ffmpeg", "-i", video_path,
+            "-map", "0:s:0",  # Extract first subtitle stream
+            output_path
+        ]
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        await process.communicate()
+        
+        if os.path.exists(output_path):
+            logger.info(f"Subtitle extracted: {output_path}")
+            return output_path
+        return None
+    except Exception as e:
+        logger.error(f"Subtitle extraction failed: {e}")
+        return None
+
+
+
+
 @Bot.on_message(
     filters.user(OWNER_IDS) &
     (filters.video | (filters.document & filters.create(lambda _, __, m: m.document and (m.document.file_name.endswith((".mp4", ".mkv"))))))
