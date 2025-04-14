@@ -1,7 +1,6 @@
 import os
 import subprocess
 import logging
-import aiofiles
 from datetime import datetime
 from .video_handler import user_data, logger
 from .cleanup import cleanup
