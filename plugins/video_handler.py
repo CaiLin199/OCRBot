@@ -20,47 +20,74 @@ async def handle_video(client, message):
 
     try:
         # Create initial status messages
-        status_msg = await message.reply("📥 Downloading video...")
+        status_msg = await message.reply("📥 Starting Download...")
         channel_msg = await client.send_message(
             MAIN_CHANNEL,
-            f"🤖 **Bot Processing New File**\n\n"
-            f"**File:** `{file_name}`\n"
-            f"**Status:** Starting Download..."
+            "Status: Starting download..."
         )
         start_time = datetime.now()
+        last_update_time = datetime.now()
+        update_interval = 7  # 7 seconds between updates
 
         async def progress_log(current, total):
             try:
+                nonlocal last_update_time
                 now = datetime.now()
+                
+                # Check if enough time has passed since last update
+                if (now - last_update_time).seconds < update_interval:
+                    return
+                    
+                last_update_time = now
                 diff = (now - start_time).seconds
+                
+                # Calculate speed
                 speed = current / diff if diff > 0 else 0
                 percentage = current * 100 / total
+                
+                # Calculate ETA
+                if speed > 0:
+                    eta = (total - current) / speed
+                    eta_hours = int(eta // 3600)
+                    eta_minutes = int((eta % 3600) // 60)
+                    eta_seconds = int(eta % 60)
+                else:
+                    eta_hours = eta_minutes = eta_seconds = 0
+                
+                # Calculate elapsed time
+                elapsed_minutes = diff // 60
+                elapsed_seconds = diff % 60
                 
                 # Progress bar
                 bar_length = 10
                 filled_length = int(percentage / 100 * bar_length)
-                bar = '■' * filled_length + '□' * (bar_length - filled_length)
+                bar = '[' + '■' * filled_length + '□' * (bar_length - filled_length) + ']'
                 
-                # Update PM message
-                await status_msg.edit(
-                    f"📥 **Downloading Video**\n\n"
-                    f"```{bar}``` {percentage:.1f}%\n"
-                    f"⚡️ **Speed:** {humanbytes(speed)}/s\n"
-                    f"📊 **Size:** {humanbytes(current)} / {humanbytes(total)}"
+                # Format progress text
+                progress_text = (
+                    f"Progress: {bar} {percentage:.1f}%\n"
+                    f"📥 Downloading: {humanbytes(current)} | {humanbytes(total)}\n"
+                    f"⚡️ Speed: {humanbytes(speed)}/s\n"
+                    f"⌛ ETA: {eta_hours}h {eta_minutes}m {eta_seconds}s\n"
+                    f"⏱️ Time elapsed: {elapsed_minutes}m {elapsed_seconds}s"
                 )
                 
-                # Update channel message
-                await channel_msg.edit(
-                    f"🤖 **Bot Processing New File**\n\n"
-                    f"**File:** `{file_name}`\n"
-                    f"**Status:** Downloading...\n\n"
-                    f"```{bar}``` {percentage:.1f}%\n"
-                    f"⚡️ **Speed:** {humanbytes(speed)}/s\n"
-                    f"📊 **Progress:** {humanbytes(current)} / {humanbytes(total)}"
-                )
+                # Update both messages
+                try:
+                    await status_msg.edit(progress_text)
+                except Exception as e:
+                    if "420 FLOOD_WAIT" not in str(e):
+                        logger.error(f"PM progress update failed: {str(e)}")
+                
+                try:
+                    await channel_msg.edit(progress_text)
+                except Exception as e:
+                    if "420 FLOOD_WAIT" not in str(e):
+                        logger.error(f"Channel progress update failed: {str(e)}")
                 
             except Exception as e:
-                logger.error(f"Progress update failed: {str(e)}")
+                if "420 FLOOD_WAIT" not in str(e):
+                    logger.error(f"Progress update failed: {str(e)}")
 
         # Download video with progress
         video_file = await message.download(file_name=file_name, progress=progress_log)
@@ -83,23 +110,15 @@ async def handle_video(client, message):
 
         if is_auto_mode():
             # Auto Mode Processing
-            await status_msg.edit("🤖 Auto Mode: Extracting subtitle...")
-            await channel_msg.edit(
-                f"🤖 **Bot Processing New File**\n\n"
-                f"**File:** `{new_name}`\n"
-                f"**Status:** Extracting subtitle..."
-            )
+            await status_msg.edit("🔄 Auto Mode: Extracting subtitle...")
+            await channel_msg.edit("Status: Extracting subtitle...")
             
             subtitle_file = await extract_subtitle(video_file)
             
             if subtitle_file:
                 # Process subtitle
                 await status_msg.edit("✏️ Processing subtitle...")
-                await channel_msg.edit(
-                    f"🤖 **Bot Processing New File**\n\n"
-                    f"**File:** `{new_name}`\n"
-                    f"**Status:** Processing subtitle..."
-                )
+                await channel_msg.edit("Status: Processing subtitle...")
                 
                 success, result = process_subtitle(subtitle_file)
                 
@@ -107,11 +126,7 @@ async def handle_video(client, message):
                     user_data[user_id]["subtitle"] = result
                     
                     await status_msg.edit("🔄 Merging video with subtitle...")
-                    await channel_msg.edit(
-                        f"🤖 **Bot Processing New File**\n\n"
-                        f"**File:** `{new_name}`\n"
-                        f"**Status:** Merging video with subtitle..."
-                    )
+                    await channel_msg.edit("Status: Merging video with subtitle...")
                     
                     await merge_subtitles_task(client, message, user_id)
                 else:
