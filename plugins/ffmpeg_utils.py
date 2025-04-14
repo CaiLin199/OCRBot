@@ -1,10 +1,11 @@
 import os
 import subprocess
 import logging
+import aiofiles
 from datetime import datetime
 from .video_handler import user_data, logger
 from .cleanup import cleanup
-from .progress_handler import progress_bar
+from .progress_handler import progress_bar, create_progress_callback
 from config import DB_CHANNEL
 from .link_generation import generate_link
 from .channel_post import post_to_main_channel
@@ -21,8 +22,34 @@ async def merge_subtitles_task(client, message, user_id):
     thumbnail = 'Assist/Images/thumbnail.jpg'
 
     try:
-        status_msg = await message.reply("Processing video...")
+        status_msg = await message.reply("Initializing...")
+        start_time = datetime.now()
+
+        # Download progress callback
+        async def download_progress(current, total):
+            try:
+                await progress_bar(
+                    current,
+                    total,
+                    status_msg,
+                    start_time,
+                    "Downloading Video",
+                    message.from_user.username or f"User_{user_id}"
+                )
+            except Exception as e:
+                logger.error(f"Download progress update failed: {str(e)}")
+
+        await status_msg.edit("📥 Starting video download...")
         
+        # Handle video download progress
+        if not os.path.exists(video):
+            downloaded_file = await client.download_media(
+                video,
+                progress=download_progress
+            )
+            video = downloaded_file
+
+        await status_msg.edit("🗑 Removing existing subtitles...")
         logger.info(f"Removing existing subtitles from video for user {user_id}")
         remove_subs_cmd = [
             "ffmpeg", "-i", video,
@@ -31,7 +58,7 @@ async def merge_subtitles_task(client, message, user_id):
         ]
         subprocess.run(remove_subs_cmd, check=True)
 
-        await status_msg.edit("Merging subtitles...")
+        await status_msg.edit("🔄 Merging subtitles and fonts...")
         logger.info(f"Merging subtitles for user {user_id}: {output_file}")
         ffmpeg_cmd = [
             "ffmpeg", "-i", "removed_subtitles.mkv",
@@ -44,9 +71,10 @@ async def merge_subtitles_task(client, message, user_id):
         ]
         subprocess.run(ffmpeg_cmd, check=True)
 
-        await status_msg.edit("Starting upload...")
-        start_time = datetime.now()
+        await status_msg.edit("📤 Starting upload...")
+        start_time = datetime.now()  # Reset start time for upload
         
+        # Upload progress callback
         async def upload_progress(current, total):
             try:
                 await progress_bar(
@@ -58,7 +86,7 @@ async def merge_subtitles_task(client, message, user_id):
                     message.from_user.username or f"User_{user_id}"
                 )
             except Exception as e:
-                logger.error(f"Progress update failed: {str(e)}")
+                logger.error(f"Upload progress update failed: {str(e)}")
 
         # Send to user
         sent_message = await message.reply_document(
@@ -88,7 +116,7 @@ async def merge_subtitles_task(client, message, user_id):
         except Exception as e:
             logger.error(f"Failed to save to DB_CHANNEL or generate link: {e}")
 
-        await status_msg.edit("✅ Upload Complete!")
+        await status_msg.edit("✅ Process Complete!")
 
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to merge subtitles: {e}")
