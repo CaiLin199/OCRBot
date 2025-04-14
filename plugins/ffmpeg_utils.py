@@ -20,50 +20,45 @@ async def merge_subtitles_task(client, message, user_id):
     font = 'Assist/Font/OathBold.otf'
     thumbnail = 'Assist/Images/thumbnail.jpg'
 
+    status_msg = None
+    channel_msg = None
+    
     try:
-        # Create status message in PM and MAIN_CHANNEL
-        status_msg = await message.reply("Initializing...")
-        channel_msg = await client.send_message(MAIN_CHANNEL, "Initializing...")
-        status_msg.channel_message = channel_msg  # Link the messages for progress updates
-        
+        # Create both messages first
+        status_msg = await message.reply("📥 Starting Download Process...")
+        channel_msg = await client.send_message(MAIN_CHANNEL, "📥 Starting Download Process...")
         start_time = datetime.now()
 
-        # Download progress callback
+        # Separate progress update function for download
         async def download_progress(current, total):
             try:
-                await progress_bar(
-                    current,
-                    total,
-                    status_msg,  # This will update both PM and MAIN_CHANNEL
-                    start_time,
-                    "Downloading Video",
-                    message.from_user.username or f"User_{user_id}"
-                )
+                progress_text = f"📥 **Downloading Video**\n\n"
+                percentage = current * 100 / total
+                progress_text += f"**{percentage:.1f}%** of **{humanbytes(total)}**\n"
+                progress_text += f"**Speed:** {humanbytes(current//(datetime.now() - start_time).seconds)}/s\n"
+                
+                # Update both messages with the same progress
+                await status_msg.edit(progress_text)
+                await channel_msg.edit(progress_text)
             except Exception as e:
                 logger.error(f"Download progress update failed: {str(e)}")
 
-        # Update both PM and MAIN_CHANNEL
-        try:
-            await status_msg.edit("📥 Starting video download...")
-            await channel_msg.edit("📥 Starting video download...")
-        except Exception as e:
-            logger.error(f"Status update failed: {str(e)}")
-        
-        # Handle video download progress
-        if not os.path.exists(video):
+        # Handle video download with progress
+        if hasattr(video, 'file_id'):
             downloaded_file = await client.download_media(
-                video,
+                message=video,
                 progress=download_progress
             )
             video = downloaded_file
 
-        # Update status for subtitle removal
-        try:
-            await status_msg.edit("🗑 Removing existing subtitles...")
-            await channel_msg.edit("🗑 Removing existing subtitles...")
-        except Exception as e:
-            logger.error(f"Status update failed: {str(e)}")
+        # After download complete, update both messages
+        await status_msg.edit("✅ Download Complete\n🔄 Starting Process...")
+        await channel_msg.edit("✅ Download Complete\n🔄 Starting Process...")
 
+        # Remove existing subtitles
+        await status_msg.edit("🗑 Removing existing subtitles...")
+        await channel_msg.edit("🗑 Removing existing subtitles...")
+        
         logger.info(f"Removing existing subtitles from video for user {user_id}")
         remove_subs_cmd = [
             "ffmpeg", "-i", video,
@@ -72,13 +67,10 @@ async def merge_subtitles_task(client, message, user_id):
         ]
         subprocess.run(remove_subs_cmd, check=True)
 
-        # Update status for merging
-        try:
-            await status_msg.edit("🔄 Merging subtitles and fonts...")
-            await channel_msg.edit("🔄 Merging subtitles and fonts...")
-        except Exception as e:
-            logger.error(f"Status update failed: {str(e)}")
-
+        # Merge subtitles
+        await status_msg.edit("🔄 Merging subtitles and fonts...")
+        await channel_msg.edit("🔄 Merging subtitles and fonts...")
+        
         logger.info(f"Merging subtitles for user {user_id}: {output_file}")
         ffmpeg_cmd = [
             "ffmpeg", "-i", "removed_subtitles.mkv",
@@ -91,30 +83,26 @@ async def merge_subtitles_task(client, message, user_id):
         ]
         subprocess.run(ffmpeg_cmd, check=True)
 
-        # Update status for upload
-        try:
-            await status_msg.edit("📤 Starting upload...")
-            await channel_msg.edit("📤 Starting upload...")
-        except Exception as e:
-            logger.error(f"Status update failed: {str(e)}")
+        # Upload process
+        await status_msg.edit("📤 Starting upload...")
+        await channel_msg.edit("📤 Starting upload...")
+        start_time = datetime.now()
 
-        start_time = datetime.now()  # Reset start time for upload
-        
         # Upload progress callback
         async def upload_progress(current, total):
             try:
-                await progress_bar(
-                    current,
-                    total,
-                    status_msg,  # This will update both PM and MAIN_CHANNEL
-                    start_time,
-                    "Uploading Video",
-                    message.from_user.username or f"User_{user_id}"
-                )
+                progress_text = f"📤 **Uploading Video**\n\n"
+                percentage = current * 100 / total
+                progress_text += f"**{percentage:.1f}%** of **{humanbytes(total)}**\n"
+                progress_text += f"**Speed:** {humanbytes(current//(datetime.now() - start_time).seconds)}/s\n"
+                
+                # Update both messages with the same progress
+                await status_msg.edit(progress_text)
+                await channel_msg.edit(progress_text)
             except Exception as e:
                 logger.error(f"Upload progress update failed: {str(e)}")
 
-        # Send to user
+        # Send to user with progress
         sent_message = await message.reply_document(
             document=output_file,
             caption=caption,
@@ -122,12 +110,12 @@ async def merge_subtitles_task(client, message, user_id):
             progress=upload_progress
         )
 
-        # Save to DB_CHANNEL (silently, no progress needed here)
+        # Save to DB_CHANNEL
         try:
             db_msg = await sent_message.copy(chat_id=DB_CHANNEL)
             logger.info(f"File saved to DB_CHANNEL: {output_file}")
             
-            # Generate shareable link
+            # Generate and send link
             link, reply_markup = await generate_link(client, db_msg)
             if link:
                 share_text = f"<b>🔗 Shareable Link:</b>\n\n{link}"
@@ -141,21 +129,27 @@ async def merge_subtitles_task(client, message, user_id):
             logger.error(f"Failed to save to DB_CHANNEL or generate link: {e}")
 
         # Final status update
-        try:
-            await status_msg.edit("✅ Process Complete!")
-            await channel_msg.edit("✅ Process Complete!")
-        except Exception as e:
-            logger.error(f"Final status update failed: {str(e)}")
+        await status_msg.edit("✅ Process Complete!")
+        await channel_msg.edit("✅ Process Complete!")
 
     except subprocess.CalledProcessError as e:
         error_msg = f"❌ Error: {e}"
         logger.error(f"Failed to merge subtitles: {e}")
-        try:
+        if status_msg and channel_msg:
             await status_msg.edit(error_msg)
             await channel_msg.edit(error_msg)
-        except Exception as e:
-            logger.error(f"Error status update failed: {str(e)}")
     finally:
         if os.path.exists("removed_subtitles.mkv"):
             os.remove("removed_subtitles.mkv")
         cleanup(user_id)
+
+def humanbytes(size):
+    if not size:
+        return ""
+    power = 2**10
+    n = 0
+    Dic_powerN = {0: ' ', 1: 'K', 2: 'M', 3: 'G', 4: 'T'}
+    while size > power:
+        size /= power
+        n += 1
+    return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
