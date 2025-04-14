@@ -1,151 +1,105 @@
 import logging
 import asyncio
+import time
 from datetime import datetime
+from typing import Optional
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-# Store the last update time
-last_update_time = {}
 
 class StatusMessages:
     def __init__(self, pm_message, channel_message):
         self.pm = pm_message
         self.channel = channel_message
+        self.msg_id = f"{pm_message.chat.id}_{pm_message.id}" if pm_message else None
+        self.last_update = 0
 
-async def progress_bar(current, total, messages: StatusMessages, start_time, action="Processing"):
-    """
-    Enhanced progress bar with different formats for PM and channel
-    Using same width characters for filled/unfilled (■/□)
-    6 second delay between updates to avoid flood wait
-    """
+async def progress_bar(current: int, total: int, messages: StatusMessages, start_time: datetime, action: str = "Processing") -> None:
+    """Simple progress bar with PM and channel updates"""
     try:
-        now = datetime.now()
-        msg_id = f"{messages.pm.chat.id}_{messages.pm.id}"
-        last_time = last_update_time.get(msg_id, 0)
+        if not messages or not messages.msg_id:
+            return
+
+        now = time.time()
         
-        # Update only every 6 seconds to avoid flood wait
-        if (now.timestamp() - last_time) < 6:
+        # Update only every 7 seconds to avoid flood wait
+        if (now - messages.last_update) < 7:
             return
             
-        diff = (now - start_time).total_seconds()
-        if diff == 0:
-            return
-            
-        # Calculate metrics
-        speed = current / diff
-        progress_percent = current * 100 / total
-        eta = (total - current) / speed if speed > 0 else 0
-        
-        # Progress bar visualization with consistent width characters
-        bar_length = 20
-        filled_length = int(bar_length * current // total)
-        bar = "■" * filled_length + "□" * (bar_length - filled_length)
-        
-        # Size calculations
+        # Calculate basic metrics
+        progress_percent = (current * 100 / total) if total > 0 else 0
         current_mb = current / (1024 * 1024)
         total_mb = total / (1024 * 1024)
-        speed_mb = speed / (1024 * 1024)
         
-        # Channel message format
-        channel_text = (
-            f"🎬 {action}\n\n"
-            f"📊 Progress Bar:\n"
-            f"[{bar}]\n"
-            f"▫️ Complete: {progress_percent:.1f}%\n"
-            f"▫️ Speed: {speed_mb:.1f} MB/s\n"
-            f"▫️ Size: {current_mb:.1f}MB / {total_mb:.1f}MB\n"
-            f"▫️ ETA: {eta:.1f}s\n\n"
-            f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
+        # Create simple progress bar
+        bar_length = 10
+        filled_length = int(bar_length * current // total) if total > 0 else 0
+        bar = "■" * filled_length + "□" * (bar_length - filled_length)
+        
+        # Simple PM message
+        pm_text = (
+            f"🔄 {action}\n"
+            f"[{bar}] {progress_percent:.1f}%\n"
+            f"💾 {current_mb:.1f}/{total_mb:.1f} MB"
         )
         
-        # PM message format
-        pm_text = (
-            f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-            f"🔄 {action}...\n\n"
+        # Simple channel message
+        channel_text = (
+            f"🎬 {action}\n"
             f"[{bar}] {progress_percent:.1f}%\n"
-            f"💾 Size: {current_mb:.1f}MB / {total_mb:.1f}MB\n"
-            f"⚡ Speed: {speed_mb:.1f} MB/s\n"
-            f"⏱ ETA: {eta:.1f}s"
+            f"📊 {current_mb:.1f}/{total_mb:.1f} MB"
         )
         
         # Update messages
         try:
-            await messages.pm.edit_text(pm_text)
+            if messages.pm:
+                await messages.pm.edit_text(pm_text)
+            if messages.channel:
+                await messages.channel.edit_text(channel_text)
+            messages.last_update = now
         except Exception as e:
             if "message is not modified" not in str(e).lower():
-                logger.error(f"PM update failed: {e}")
-        
-        try:
-            await messages.channel.edit_text(channel_text)
-        except Exception as e:
-            if "message is not modified" not in str(e).lower():
-                logger.error(f"Channel update failed: {e}")
-        
-        last_update_time[msg_id] = now.timestamp()
+                logger.info(f"Message edit: {str(e)}")
         
     except Exception as e:
-        logger.error(f"Progress update failed: {e}")
+        logger.info(f"Progress update: {str(e)}")
 
-async def update_status_text(messages: StatusMessages, action: str):
-    """
-    Update status text without progress bar
-    """
-    channel_text = (
-        f"🎬 {action}\n\n"
-        f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-        "▫️ Status: Processing..."
-    )
-    
-    pm_text = (
-        f"⌚ {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-        f"🔄 {action}..."
-    )
-    
+async def create_status_messages(client, user_message, channel_id: Optional[int] = None) -> Optional[StatusMessages]:
+    """Create initial status messages"""
     try:
-        await messages.pm.edit_text(pm_text)
-        await messages.channel.edit_text(channel_text)
-    except Exception as e:
-        logger.error(f"Status update failed: {e}")
-
-async def create_status_messages(client, user_message, channel_id):
-    """
-    Create initial status messages
-    """
-    try:
-        initial_text = (
-            "🎬 Initializing Process...\n\n"
-            f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-            "▫️ Status: Starting..."
-        )
-        
-        pm_msg = await user_message.reply(initial_text)
-        channel_msg = await client.send_message(channel_id, initial_text)
+        pm_msg = await user_message.reply("🎬 Starting...")
+        channel_msg = await client.send_message(channel_id, "🎬 Starting...") if channel_id else None
         return StatusMessages(pm_msg, channel_msg)
     except Exception as e:
-        logger.error(f"Failed to create status messages: {e}")
+        logger.info(f"Status message creation: {str(e)}")
         return None
 
-def create_progress_callback(messages: StatusMessages, start_time, action):
-    """
-    Create progress callback for file operations
-    """
-    loop = asyncio.get_event_loop()
-    
-    def callback(current, total):
-        return asyncio.run_coroutine_threadsafe(
-            progress_bar(current, total, messages, start_time, action),
-            loop
-        )
-    
+def create_progress_callback(messages: StatusMessages, start_time: datetime, action: str):
+    """Simple progress callback creator"""
+    async def callback(current: int, total: int) -> None:
+        await progress_bar(current, total, messages, start_time, action)
     return callback
 
-async def delete_channel_status(message):
-    """
-    Delete channel status message
-    """
+async def update_status(messages: StatusMessages, text: str) -> None:
+    """Update status text"""
+    if not messages:
+        return
     try:
-        if message:
-            await message.delete()
+        if messages.pm:
+            await messages.pm.edit_text(text)
+        if messages.channel:
+            await messages.channel.edit_text(text)
     except Exception as e:
-        logger.error(f"Failed to delete channel message: {e}")
+        logger.info(f"Status update: {str(e)}")
+
+async def cleanup_messages(messages: StatusMessages) -> None:
+    """Clean up messages"""
+    if not messages:
+        return
+    try:
+        if messages.pm:
+            await messages.pm.delete()
+        if messages.channel:
+            await messages.channel.delete()
+    except Exception:
+        pass
