@@ -84,10 +84,7 @@ async def merge_subtitles_task(client, message, user_id):
                 
                 # Post to main channel
                 await post_to_main_channel(client, new_name, link)
-                
-        except Exception as e:
-            logger.error(f"Failed to save to DB_CHANNEL or generate link: {e}")
-            
+                            
         except Exception as e:
             logger.error(f"Failed to save to DB_CHANNEL or generate link: {e}")
 
