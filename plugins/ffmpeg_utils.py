@@ -15,7 +15,7 @@ async def merge_subtitles_task(client, message, user_id):
     subtitle = data["subtitle"]
     new_name = data["new_name"]
     caption = data["caption"]
-    channel_msg = data.get("channel_msg")  # Get channel message from user_data
+    channel_msg = data.get("channel_msg")
     output_file = f"{new_name}.mkv"
 
     font = 'Assist/Font/OathBold.otf'
@@ -27,11 +27,7 @@ async def merge_subtitles_task(client, message, user_id):
         
         # Update channel msg for processing
         if channel_msg:
-            await channel_msg.edit(
-                f"🤖 **Bot Processing New File**\n\n"
-                f"**File:** `{new_name}`\n"
-                f"**Status:** Removing existing subtitles..."
-            )
+            await channel_msg.edit("Status: Removing existing subtitles...")
 
         logger.info(f"Removing existing subtitles from video for user {user_id}")
         remove_subs_cmd = [
@@ -44,13 +40,9 @@ async def merge_subtitles_task(client, message, user_id):
         # Update status for merging
         await status_msg.edit("🔄 Merging subtitles...")
         if channel_msg:
-            await channel_msg.edit(
-                f"🤖 **Bot Processing New File**\n\n"
-                f"**File:** `{new_name}`\n"
-                f"**Status:** Merging subtitles and fonts..."
-            )
+            await channel_msg.edit("Status: Merging subtitles and fonts...")
 
-        logger.info(f"Merging subtitles for user {user_id}: {output_file}")
+        logger.info(f"Merging subtitles: {output_file}")
         ffmpeg_cmd = [
             "ffmpeg", "-i", "removed_subtitles.mkv",
             "-i", subtitle,
@@ -65,47 +57,72 @@ async def merge_subtitles_task(client, message, user_id):
         # Update status for upload
         await status_msg.edit("📤 Starting upload...")
         if channel_msg:
-            await channel_msg.edit(
-                f"🤖 **Bot Processing New File**\n\n"
-                f"**File:** `{new_name}`\n"
-                f"**Status:** Starting upload..."
-            )
+            await channel_msg.edit("Status: Starting upload...")
 
         start_time = datetime.now()
+        last_update_time = datetime.now()
+        update_interval = 7  # 7 seconds between updates
         
         # Upload progress callback
         async def progress_callback(current, total):
             try:
+                nonlocal last_update_time
                 now = datetime.now()
+                
+                # Check if enough time has passed since last update
+                if (now - last_update_time).seconds < update_interval:
+                    return
+                
+                last_update_time = now
                 diff = (now - start_time).seconds
                 speed = current / diff if diff > 0 else 0
                 percentage = current * 100 / total
 
+                # Calculate ETA
+                if speed > 0:
+                    eta = (total - current) / speed
+                    eta_hours = int(eta // 3600)
+                    eta_minutes = int((eta % 3600) // 60)
+                    eta_seconds = int(eta % 60)
+                else:
+                    eta_hours = eta_minutes = eta_seconds = 0
+
+                # Calculate elapsed time
+                elapsed_minutes = diff // 60
+                elapsed_seconds = diff % 60
+
                 # Create progress bar
                 bar_length = 10
                 filled_length = int(percentage / 100 * bar_length)
-                bar = '■' * filled_length + '□' * (bar_length - filled_length)
+                bar = '[' + '■' * filled_length + '□' * (bar_length - filled_length) + ']'
+
+                # Format progress text
+                progress_text = (
+                    f"Progress: {bar} {percentage:.1f}%\n"
+                    f"📥 Uploading: {humanbytes(current)} | {humanbytes(total)}\n"
+                    f"⚡️ Speed: {humanbytes(speed)}/s\n"
+                    f"⌛ ETA: {eta_hours}h {eta_minutes}m {eta_seconds}s\n"
+                    f"⏱️ Time elapsed: {elapsed_minutes}m {elapsed_seconds}s"
+                )
 
                 # Update channel message with progress
                 if channel_msg:
-                    await channel_msg.edit(
-                        f"🤖 **Bot Processing New File**\n\n"
-                        f"**File:** `{new_name}`\n"
-                        f"**Status:** Uploading...\n\n"
-                        f"```{bar}``` {percentage:.1f}%\n"
-                        f"⚡️ **Speed:** {humanbytes(speed)}/s\n"
-                        f"📊 **Progress:** {humanbytes(current)} / {humanbytes(total)}"
-                    )
+                    try:
+                        await channel_msg.edit(progress_text)
+                    except Exception as e:
+                        if "420 FLOOD_WAIT" not in str(e):
+                            logger.error(f"Channel progress update failed: {str(e)}")
                     
                 # Update status message in PM
-                await status_msg.edit(
-                    f"📤 **Uploading Video**\n\n"
-                    f"```{bar}``` {percentage:.1f}%\n"
-                    f"⚡️ **Speed:** {humanbytes(speed)}/s\n"
-                    f"📊 **Size:** {humanbytes(current)} / {humanbytes(total)}"
-                )
+                try:
+                    await status_msg.edit(progress_text)
+                except Exception as e:
+                    if "420 FLOOD_WAIT" not in str(e):
+                        logger.error(f"PM progress update failed: {str(e)}")
+
             except Exception as e:
-                logger.error(f"Progress update failed: {str(e)}")
+                if "420 FLOOD_WAIT" not in str(e):
+                    logger.error(f"Progress update failed: {str(e)}")
 
         # Send file with progress
         sent_message = await message.reply_document(
@@ -123,7 +140,7 @@ async def merge_subtitles_task(client, message, user_id):
             link, reply_markup = await generate_link(client, db_msg)
             if link:
                 await message.reply_text(
-                    f"<b>🔗 Shareable Link:</b>\n\n{link}",
+                    f"🔗 Link Generated Successfully!",
                     reply_markup=reply_markup
                 )
                 
