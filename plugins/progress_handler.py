@@ -8,6 +8,17 @@ logger = logging.getLogger(__name__)
 # Store the last update time
 last_update_time = {}
 
+async def update_status(status_msg, text, channel_message=None):
+    """
+    Updates status message in both PM and channel if exists
+    """
+    try:
+        await status_msg.edit_text(text)
+        if hasattr(status_msg, 'channel_message') and status_msg.channel_message:
+            await status_msg.channel_message.edit_text(text)
+    except Exception as e:
+        logger.error(f"Failed to update status: {e}")
+
 async def progress_bar(current, total, status_msg, start_time, action="Processing", user_login=None):
     """
     Enhanced progress bar for Telegram file operations with timestamp, user info, speed and ETA
@@ -21,8 +32,8 @@ async def progress_bar(current, total, status_msg, start_time, action="Processin
         msg_id = f"{status_msg.chat.id}_{status_msg.id}"
         last_time = last_update_time.get(msg_id, 0)
         
-        # Check if enough time has passed since the last update (4 seconds)
-        if (now.timestamp() - last_time) < 4:
+        # Check if enough time has passed since the last update (7 seconds)
+        if (now.timestamp() - last_time) < 7:
             return
             
         diff = (now - start_time).total_seconds()
@@ -35,7 +46,7 @@ async def progress_bar(current, total, status_msg, start_time, action="Processin
         eta = (total - current) / speed if speed > 0 else 0
         
         # Fixed width progress bar (15 characters to prevent wrapping)
-        bar_length = 15
+        bar_length = 8
         filled_length = int(bar_length * current // total)
         bar = "█" * filled_length + "-" * (bar_length - filled_length)
         
@@ -58,18 +69,8 @@ async def progress_bar(current, total, status_msg, start_time, action="Processin
             f"⏱ ETA: {eta:5.1f}s"  # Fixed width ETA
         )
         
-        # Update in PM
-        try:
-            await status_msg.edit_text(progress_text)
-        except Exception:
-            pass
-            
-        # Update in channel if channel_message exists
-        try:
-            if hasattr(status_msg, 'channel_message') and status_msg.channel_message:
-                await status_msg.channel_message.edit_text(progress_text)
-        except Exception:
-            pass
+        # Update in PM and channel
+        await update_status(status_msg, progress_text)
         
         # Update the last update time
         last_update_time[msg_id] = now.timestamp()
@@ -82,7 +83,7 @@ async def progress_bar(current, total, status_msg, start_time, action="Processin
         logger.error(f"Failed to update progress bar: {e}")
         try:
             if str(e).find("FLOOD_WAIT") == -1:  # Only show error if it's not a flood wait
-                await status_msg.edit_text(f"Error during {action.lower()} progress: {e}")
+                await update_status(status_msg, f"Error during {action.lower()} progress: {e}")
         except:
             pass
 
