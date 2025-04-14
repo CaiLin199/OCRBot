@@ -4,8 +4,14 @@ import logging
 from datetime import datetime
 from .video_handler import user_data, logger
 from .cleanup import cleanup
-from .progress_handler import progress_bar
-from config import DB_CHANNEL
+from .progress_handler import (
+    StatusMessages, 
+    create_status_messages, 
+    create_progress_callback,
+    update_status_text,
+    delete_channel_status
+)
+from config import DB_CHANNEL, MAIN_CHANNEL
 from .link_generation import generate_link
 from .channel_post import post_to_main_channel
 
@@ -16,14 +22,19 @@ async def merge_subtitles_task(client, message, user_id):
     new_name = data["new_name"]
     caption = data["caption"]
     output_file = f"{new_name}.mkv"
-
     font = 'Assist/Font/OathBold.otf'
     thumbnail = 'Assist/Images/thumbnail.jpg'
 
     try:
-        status_msg = await message.reply("Processing video...")
+        # Create single status message for both PM and channel
+        status_messages = await create_status_messages(client, message, MAIN_CHANNEL)
+        if not status_messages:
+            return await message.reply("Failed to initialize status messages.")
+
+        # Process video (no progress bar needed for processing)
+        await update_status_text(status_messages, "Processing Video...")
         
-        logger.info(f"Removing existing subtitles from video for user {user_id}")
+        logger.info(f"Processing video for user {user_id}")
         remove_subs_cmd = [
             "ffmpeg", "-i", video,
             "-map", "0:v", "-map", "0:a?",
@@ -31,8 +42,8 @@ async def merge_subtitles_task(client, message, user_id):
         ]
         subprocess.run(remove_subs_cmd, check=True)
 
-        await status_msg.edit("Merging subtitles...")
-        logger.info(f"Merging subtitles for user {user_id}: {output_file}")
+        # Merge subtitles (no progress bar needed)
+        await update_status_text(status_messages, "Merging Subtitles...")
         ffmpeg_cmd = [
             "ffmpeg", "-i", "removed_subtitles.mkv",
             "-i", subtitle,
@@ -44,104 +55,58 @@ async def merge_subtitles_task(client, message, user_id):
         ]
         subprocess.run(ffmpeg_cmd, check=True)
 
-        await status_msg.edit("Starting upload...")
+        # Upload with progress bar
         start_time = datetime.now()
+        callback = create_progress_callback(status_messages, start_time, "Uploading Video")
         
-        async def upload_progress(current, total):
-            try:
-                await progress_bar(
-                    current,
-                    total,
-                    status_msg,
-                    start_time,
-                    "Uploading Video",
-                    message.from_user.username or f"User_{user_id}"
-                )
-            except Exception as e:
-                logger.error(f"Progress update failed: {str(e)}")
-
-        # Send to user
         sent_message = await message.reply_document(
             document=output_file,
             caption=caption,
             thumb=thumbnail,
-            progress=upload_progress
+            progress=callback
         )
 
         # Save to DB_CHANNEL and generate link
         try:
-            # Save copy to DB_CHANNEL
             db_msg = await sent_message.copy(chat_id=DB_CHANNEL)
-            logger.info(f"File saved to DB_CHANNEL: {output_file}")
-            
-            # Generate shareable link
             link, reply_markup = await generate_link(client, db_msg)
+            
             if link:
                 await message.reply_text(
                     f"<b>🔗 Shareable Link:</b>\n\n{link}",
                     reply_markup=reply_markup
-                )                
-                
-                # Post to main channel
+                )
                 await post_to_main_channel(client, new_name, link)
-                            
+                # Delete progress message after posting to channel
+                await delete_channel_status(status_messages.channel)
+                
         except Exception as e:
             logger.error(f"Failed to save to DB_CHANNEL or generate link: {e}")
 
-        await status_msg.edit("✅ Upload Complete!")
-
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to merge subtitles: {e}")
-        await status_msg.edit(f"❌ Error: {e}")
+        await update_status_text(status_messages, f"❌ Error: {str(e)}")
     finally:
         if os.path.exists("removed_subtitles.mkv"):
             os.remove("removed_subtitles.mkv")
         cleanup(user_id)
 
+# Simple functions without progress bar
 async def extract_subtitles(client, message, user_id):
     data = user_data[user_id]
     video_file = data["video"]
     output_subtitle = video_file.rsplit('.', 1)[0] + ".srt"
     output_ass = video_file.rsplit('.', 1)[0] + ".ass"
 
+    status_msg = await message.reply("Extracting subtitles...")
     try:
-        status_msg = await message.reply("Extracting subtitles...")
-        logger.info(f"Extracting subtitles from {video_file}")
-        
         subprocess.run(["ffmpeg", "-i", video_file, "-map", "0:s:0", output_subtitle], check=True)
-        logger.info(f"Subtitles extracted to {output_subtitle}")
-
         subprocess.run(["ffmpeg", "-i", output_subtitle, output_ass], check=True)
-        logger.info(f"Subtitles converted to {output_ass}")
-
-        start_time = datetime.now()
-
-        async def upload_progress(current, total):
-            try:
-                await progress_bar(
-                    current,
-                    total,
-                    status_msg,
-                    start_time,
-                    "Uploading Subtitle",
-                    message.from_user.username or f"User_{user_id}"
-                )
-            except Exception as e:
-                logger.error(f"Progress update failed: {str(e)}")
-
-        await message.reply_document(
-            document=output_subtitle,
-            caption="Here is the extracted subtitle file.",
-            progress=upload_progress
-        )
         
-        start_time = datetime.now()  # Reset start time for second upload
-        await message.reply_document(
-            document=output_ass,
-            caption="Here is the converted ASS subtitle file.",
-            progress=upload_progress
-        )
-
+        await message.reply_document(document=output_subtitle, caption="Extracted subtitle file (SRT)")
+        await message.reply_document(document=output_ass, caption="Converted subtitle file (ASS)")
+        await status_msg.edit("✅ Subtitles extracted and converted successfully!")
+        
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to extract subtitles: {e}")
         await status_msg.edit(f"❌ Error: {e}")
@@ -150,42 +115,17 @@ async def generate_screenshot(client, message, user_id):
     data = user_data[user_id]
     video_file = data["video"]
     screenshot_path = video_file.rsplit('.', 1)[0] + "_screenshot.png"
-    timestamp = "00:03:05"
-
+    
+    status_msg = await message.reply("Generating screenshot...")
     try:
-        status_msg = await message.reply("Generating screenshot...")
-        logger.info(f"Generating screenshot from {video_file} at {timestamp}")
-        
         subprocess.run([
-            "ffmpeg", "-ss", timestamp, "-i", video_file,
-            "-frames:v", "1", "-q:v", "2",
-            screenshot_path
+            "ffmpeg", "-ss", "00:03:05", "-i", video_file,
+            "-frames:v", "1", "-q:v", "2", screenshot_path
         ], check=True)
-        logger.info(f"Screenshot saved to {screenshot_path}")
-
-        start_time = datetime.now()
-
-        async def upload_progress(current, total):
-            try:
-                await progress_bar(
-                    current,
-                    total,
-                    status_msg,
-                    start_time,
-                    "Uploading Screenshot",
-                    message.from_user.username or f"User_{user_id}"
-                )
-            except Exception as e:
-                logger.error(f"Progress update failed: {str(e)}")
-
-        await message.reply_photo(
-            photo=screenshot_path,
-            caption="Here is the screenshot.",
-            progress=upload_progress
-        )
         
-        await status_msg.edit("✅ Screenshot generated and uploaded!")
-
+        await message.reply_photo(photo=screenshot_path, caption="Screenshot generated")
+        await status_msg.edit("✅ Screenshot generated!")
+        
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to generate screenshot: {e}")
         await status_msg.edit(f"❌ Error: {e}")
