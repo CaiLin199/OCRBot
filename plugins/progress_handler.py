@@ -58,7 +58,18 @@ async def progress_bar(current, total, status_msg, start_time, action="Processin
             f"⏱ ETA: {eta:5.1f}s"  # Fixed width ETA
         )
         
-        await status_msg.edit_text(progress_text)
+        # Update in PM
+        try:
+            await status_msg.edit_text(progress_text)
+        except Exception:
+            pass
+            
+        # Update in channel if channel_message exists
+        try:
+            if hasattr(status_msg, 'channel_message') and status_msg.channel_message:
+                await status_msg.channel_message.edit_text(progress_text)
+        except Exception:
+            pass
         
         # Update the last update time
         last_update_time[msg_id] = now.timestamp()
