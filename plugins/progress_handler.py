@@ -16,14 +16,16 @@ class StatusMessages:
 async def progress_bar(current, total, messages: StatusMessages, start_time, action="Processing"):
     """
     Enhanced progress bar with different formats for PM and channel
+    Using same width characters for filled/unfilled (■/□)
+    6 second delay between updates to avoid flood wait
     """
     try:
         now = datetime.now()
         msg_id = f"{messages.pm.chat.id}_{messages.pm.id}"
         last_time = last_update_time.get(msg_id, 0)
         
-        # Update only every 3 seconds
-        if (now.timestamp() - last_time) < 3:
+        # Update only every 6 seconds to avoid flood wait
+        if (now.timestamp() - last_time) < 6:
             return
             
         diff = (now - start_time).total_seconds()
@@ -35,30 +37,32 @@ async def progress_bar(current, total, messages: StatusMessages, start_time, act
         progress_percent = current * 100 / total
         eta = (total - current) / speed if speed > 0 else 0
         
-        # Progress bar visualization
+        # Progress bar visualization with consistent width characters
         bar_length = 20
         filled_length = int(bar_length * current // total)
-        bar = "█" * filled_length + "-" * (bar_length - filled_length)
+        bar = "■" * filled_length + "□" * (bar_length - filled_length)
         
         # Size calculations
         current_mb = current / (1024 * 1024)
         total_mb = total / (1024 * 1024)
         speed_mb = speed / (1024 * 1024)
         
-        # Channel message format (focused on progress metrics)
+        # Channel message format
         channel_text = (
             f"🎬 {action}\n\n"
-            f"▫️ Progress: [{bar}]\n"
+            f"📊 Progress Bar:\n"
+            f"[{bar}]\n"
             f"▫️ Complete: {progress_percent:.1f}%\n"
             f"▫️ Speed: {speed_mb:.1f} MB/s\n"
             f"▫️ Size: {current_mb:.1f}MB / {total_mb:.1f}MB\n"
-            f"▫️ ETA: {eta:.1f}s"
+            f"▫️ ETA: {eta:.1f}s\n\n"
+            f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC"
         )
         
-        # PM message format (more detailed)
+        # PM message format
         pm_text = (
             f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-            f"🔄 {action}...\n"
+            f"🔄 {action}...\n\n"
             f"[{bar}] {progress_percent:.1f}%\n"
             f"💾 Size: {current_mb:.1f}MB / {total_mb:.1f}MB\n"
             f"⚡ Speed: {speed_mb:.1f} MB/s\n"
@@ -87,8 +91,16 @@ async def update_status_text(messages: StatusMessages, action: str):
     """
     Update status text without progress bar
     """
-    channel_text = f"🎬 {action}\n\nPreparing..."
-    pm_text = f"⌚ {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n🔄 {action}..."
+    channel_text = (
+        f"🎬 {action}\n\n"
+        f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+        "▫️ Status: Processing..."
+    )
+    
+    pm_text = (
+        f"⌚ {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+        f"🔄 {action}..."
+    )
     
     try:
         await messages.pm.edit_text(pm_text)
@@ -101,8 +113,14 @@ async def create_status_messages(client, user_message, channel_id):
     Create initial status messages
     """
     try:
-        pm_msg = await user_message.reply("Initializing...")
-        channel_msg = await client.send_message(channel_id, "🎬 Initializing...")
+        initial_text = (
+            "🎬 Initializing Process...\n\n"
+            f"⌚ Time: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+            "▫️ Status: Starting..."
+        )
+        
+        pm_msg = await user_message.reply(initial_text)
+        channel_msg = await client.send_message(channel_id, initial_text)
         return StatusMessages(pm_msg, channel_msg)
     except Exception as e:
         logger.error(f"Failed to create status messages: {e}")
