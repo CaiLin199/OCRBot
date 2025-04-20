@@ -8,8 +8,9 @@ def process_subtitle(input_file, output_file=None):
     """
     Process ASS subtitle file:
     1. Replace Script Info and Style sections with template
-    2. Remove dialogs before episode number
-    3. Maintain position tags for all dialogs
+    2. Keep dialogs after episode number
+    3. Maintain position tags
+    4. Format episode number correctly
     """
     try:
         if output_file is None:
@@ -39,22 +40,28 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\
         
         for line in lines:
             if line.startswith('Dialogue:'):
-                # Check if this is the episode line
-                if 'Episode' in line or 'episode' in line:
-                    episode_found = True
-                    episode_line = line
-                    continue
-                
-                # Only keep dialogs after finding the episode line
-                if episode_found:
-                    parts = line.split(',', 9)
-                    if len(parts) > 9:
-                        text = parts[9].strip()
-                        # Remove all existing tags except pos
-                        text = re.sub(r'{[^{}]*}', '', text)
-                        # Add position tag
-                        text = f"{{\\pos(193,265)}}{text}"
-                        parts[9] = text + '\n'
+                parts = line.split(',', 9)
+                if len(parts) > 9:
+                    text = parts[9].strip()
+                    # Check if this is the main episode line (not "Next Episode")
+                    if ('Episode:' in text or 'Episode' in text) and 'Next' not in text:
+                        episode_found = True
+                        # Extract episode number
+                        episode_match = re.search(r'Episode:?\s*(\d+)', text)
+                        if episode_match:
+                            episode_num = episode_match.group(1)
+                            # Format episode text with tilde
+                            text = f"{{\\pos(193,265)}}Episode {episode_num} ~ [HeavenlySubs]\n"
+                            parts[9] = text
+                            episode_line = ','.join(parts)
+                        continue
+                    
+                    # Process other dialogs after episode line is found
+                    if episode_found:
+                        # Keep original position tag
+                        text = re.sub(r'{[^{}]*}', '', text)  # Remove existing tags
+                        text = f"{{\\pos(193,265)}}{text}\n"  # Add position tag
+                        parts[9] = text
                         processed_dialogs.append(','.join(parts))
 
         # Write the processed file
@@ -62,19 +69,9 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\
             # Write template
             f.write(template)
             
-            # Write episode line first if found
+            # Write episode line first
             if episode_line:
-                parts = episode_line.split(',', 9)
-                if len(parts) > 9:
-                    text = parts[9].strip()
-                    # Remove all tags and add episode formatting
-                    text = re.sub(r'{[^{}]*}', '', text)
-                    # Format episode text
-                    if 'Episode' in text:
-                        text = text.replace('Episode:', 'Episode:').strip()
-                        text = f"{{\\pos(193,265)}}{text} [HeavenlySubs]\n"
-                    parts[9] = text
-                    f.write(','.join(parts))
+                f.write(episode_line)
             
             # Write remaining dialogs
             for dialog in processed_dialogs:
