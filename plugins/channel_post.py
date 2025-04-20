@@ -10,9 +10,16 @@ logger = logging.getLogger(__name__)
 def extract_episode_number(filename):
     """Extract episode number from filename."""
     try:
+        # First try to match [number] format
+        match = re.search(r'\[(\d+)\]', filename)
+        if match:
+            return int(match.group(1))
+            
+        # Fallback to original format
         match = re.search(r'(?:Episode\s*)?(\d+)', filename)
         if match:
             return int(match.group(1))
+            
         logger.warning(f"No episode number found in filename: {filename}")
         return None
     except Exception as e:
