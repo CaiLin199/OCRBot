@@ -14,6 +14,14 @@ STICKER_ID = os.environ.get("STICKER_ID", "CAACAgUAAxkBAAIJZGfLOdpxPmkKJ_nlJICh0
 PORT = os.environ.get("PORT", "8080")
 TG_BOT_WORKERS = int(os.environ.get("TG_BOT_WORKERS", "1"))
 
+
+# Aria2 RPC configuration
+ARIA2_SECRET = os.environ.get("ARIA2_SECRET", "")  # Optional: Use "" if no secret is set
+ARIA2_HOST = os.environ.get("ARIA2_HOST", "http://localhost")  # Default host
+ARIA2_PORT = int(os.environ.get("ARIA2_PORT", "6800"))  # Default port (6800)  # New Refresh Token
+
+
+
 #FORMATS
 POST_FORMAT = """
 {title}\n\n
@@ -24,6 +32,9 @@ POST_FORMAT = """
 •SYPNOSYS:
 {description}
 """
+
+
+
 
 LOG_FILE_NAME = "filesharingbot.txt"
 logging.basicConfig(
