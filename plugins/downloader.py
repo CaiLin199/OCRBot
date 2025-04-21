@@ -1,3 +1,6 @@
+#donot use this code commented out
+
+'''
 import os
 import asyncio
 from .shared_data import logger
@@ -68,3 +71,5 @@ async def download_file(url, progress_callback):
     except Exception as e:
         logger.error(f"Download failed: {e}")
         return None
+
+'''
