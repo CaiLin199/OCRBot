@@ -175,3 +175,4 @@ class ProgressHandler:
                 await self.channel_msg.delete()
         except Exception as e:
             print(f"Failed to delete channel message: {str(e)}") 
+'''
