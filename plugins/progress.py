@@ -10,13 +10,13 @@ class Progress:
         self.action = action
         
     def get_progress_bar(self, current, total):
-        bar_length = 20
+        bar_length = 10  # Fixed length of 10 blocks
         if total == 0:
             percentage = 0
         else:
             percentage = current * 100 / total
         filled_length = int(percentage * bar_length / 100)
-        bar = '█' * filled_length + '▒' * (bar_length - filled_length)
+        bar = '•' * filled_length + '°' * (bar_length - filled_length)
         return bar, percentage
         
     def get_human_bytes(self, size):
@@ -62,8 +62,8 @@ class Progress:
         
         # Create progress text
         progress_text = (
-            f"{self.action}\n\n"
-            f"Progress: [{bar}] {percentage:.1f}%\n"
+            f"{self.action}\n"
+            f"Progress: {bar} {percentage:.1f}%\n"
             f"Size: {self.get_human_bytes(current)} / {self.get_human_bytes(total)}\n"
             f"Speed: {self.get_human_bytes(speed)}/s\n"
             f"ETA: {eta_str}\n"
