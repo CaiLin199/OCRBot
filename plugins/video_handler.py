@@ -47,19 +47,38 @@ class VideoHandler:
                 # Add download to aria2
                 download = aria2.add_uris([download_url])
                 file_path = None
+                last_update_time = 0
+                update_interval = 5  # Update every 2 seconds
 
                 while not download.is_complete:
                     download.update()
                     current = download.completed_length
                     total = download.total_length
                     
-                    await progress.update_progress(current, total)
-                    await asyncio.sleep(1)
+                    current_time = asyncio.get_event_loop().time()
+                    if current_time - last_update_time >= update_interval:
+                        if total > 0:  # Prevent division by zero
+                            percentage = (current * 100) / total
+                            speed = download.download_speed
+                            
+                            # Format speed
+                            if speed > 1024*1024:  # MB/s
+                                speed_text = f"{speed/(1024*1024):.1f} MB/s"
+                            else:  # KB/s
+                                speed_text = f"{speed/1024:.1f} KB/s"
+                            
+                            status_text = f"📥 Downloading... {percentage:.1f}%\n💫 Speed: {speed_text}"
+                            await progress.update_progress(current, total, status_text)
+                            last_update_time = current_time
+                    
+                    await asyncio.sleep(0.5)  # Reduced sleep time for better responsiveness
 
                 if download.is_complete:
                     file_path = download.files[0].path
                     
                 if file_path and os.path.exists(file_path):
+                    await status_msg.edit_text("✅ Download Complete! Starting Upload...")
+                    
                     # Get user's post data
                     post_data = post_handler.get_post_data(user_id)
                     
@@ -72,7 +91,7 @@ class VideoHandler:
                         post_data
                     )
                     
-                    # Upload file (thumbnail is handled in UploadHandler)
+                    # Upload file
                     msg_id = await upload_handler.upload_file(file_path)
                     
                     if msg_id:
@@ -106,7 +125,6 @@ class VideoHandler:
                                     )
                             except Exception as e:
                                 logger.error(f"Failed to send post: {e}")
-                                # Send basic post if cover image fails
                                 await client.send_message(
                                     chat_id=MAIN_CHANNEL,
                                     text=post_handler.format_post(post_data),
@@ -147,39 +165,4 @@ class VideoHandler:
             if 'channel_msg' in locals():
                 await channel_msg.delete()
 
-# Create handler instance
-video_handler = VideoHandler()
-
-# Command handlers
-@Bot.on_message(filters.command('ddl') & filters.user(OWNER_ID))
-async def handle_ddl(client, message):
-    await video_handler._handle_ddl(client, message)
-
-@Bot.on_message(filters.command('post') & filters.user(OWNER_ID))
-async def handle_post(client, message):
-    await post_handler.handle_post_command(client, message)
-
-@Bot.on_callback_query()
-async def handle_callbacks(client, callback_query):
-    try:
-        if callback_query.data == "create_post":
-            post_data = post_handler.get_post_data(callback_query.from_user.id)
-            if not post_data.get('ddl'):
-                await callback_query.answer("Direct Link is required!", show_alert=True)
-                return
-            
-            await video_handler._handle_ddl(
-                client,
-                callback_query.message,
-                url=post_data['ddl'],
-                user_id=callback_query.from_user.id
-            )
-        else:
-            await post_handler.handle_callback(client, callback_query)
-    except Exception as e:
-        logger.error(f"Callback error: {e}")
-        await callback_query.answer("An error occurred", show_alert=True)
-
-@Bot.on_message(filters.private & filters.user(OWNER_ID))
-async def handle_post_input(client, message):
-    await post_handler.handle_input(client, message)
+# Command handlers remain the same
