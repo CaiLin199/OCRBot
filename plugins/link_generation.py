@@ -1,6 +1,6 @@
 import base64
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from config import DB_CHANNEL
+from config import CHANNEL_ID
 
 async def encode(string):
     """Encode a string to base64."""
