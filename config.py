@@ -13,6 +13,19 @@ ANIME_COVER = os.environ.get("ANIME_COVER", "Assist/Images/cover.jpg")
 STICKER_ID = os.environ.get("STICKER_ID", "CAACAgUAAxkBAAIJZGfLOdpxPmkKJ_nlJICh0bmi7GF1AALLFwACWARYVg4ubUgM9uuVNgQ")
 PORT = os.environ.get("PORT", "8080")
 TG_BOT_WORKERS = int(os.environ.get("TG_BOT_WORKERS", "1"))
+
+#FORMATS
+POST_FORMAT = 
+"""
+{title}\n\n
+• EPISODE: {episode}
+• GENRAS: {genras}
+• RATING: {rating}
+
+•SYPNOSYS:
+{description}
+"""
+
 LOG_FILE_NAME = "filesharingbot.txt"
 logging.basicConfig(
     level=logging.INFO,
