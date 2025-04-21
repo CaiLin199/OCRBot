@@ -1,12 +1,15 @@
-import os
-import logging
+
+# donot use this file commentsed out
 from pyrogram import filters
+import logging
 from bot import Bot
 from config import OWNER_IDS, LOG_FILE_NAME
+'''
+import os
 from .video_handler import user_data, logger
 
 #do not use these codes comments out
-'''
+
 def cleanup(user_id):
     if user_id in user_data:
         data = user_data[user_id]
