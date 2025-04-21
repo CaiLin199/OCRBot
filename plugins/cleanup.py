@@ -5,6 +5,7 @@ from bot import Bot
 from config import OWNER_IDS, LOG_FILE_NAME
 from .video_handler import user_data, logger
 
+'''
 def cleanup(user_id):
     if user_id in user_data:
         data = user_data[user_id]
@@ -19,6 +20,8 @@ async def clear_storage(client, message):
     user_id = message.from_user.id
     cleanup(user_id)
     await message.reply("Storage has been cleared.")
+'''
+
 
 @Bot.on_message(filters.user(OWNER_IDS) & filters.command("logs"))
 async def get_log_file(client, message):
