@@ -1,4 +1,3 @@
-# video_handler.py
 import os
 import asyncio
 from pyrogram import filters
@@ -18,7 +17,6 @@ post_handler = PostHandler()
 class VideoHandler:
     def __init__(self):
         logger.info("VideoHandler initialized")
-        self.thumbnail_path = "Assist/Images/thumbnail.jpg"
         
     async def _handle_ddl(self, client, message, url=None, user_id=None):
         """Handle DDL command and process downloads"""
@@ -74,11 +72,8 @@ class VideoHandler:
                         post_data
                     )
                     
-                    # Upload file with thumbnail
-                    msg_id = await upload_handler.upload_file(
-                        file_path,
-                        thumb=self.thumbnail_path
-                    )
+                    # Upload file (thumbnail is handled in UploadHandler)
+                    msg_id = await upload_handler.upload_file(file_path)
                     
                     if msg_id:
                         # Generate shareable link
@@ -140,7 +135,8 @@ class VideoHandler:
                     
                 logger.error(f"Download failed: {e}")
                 await status_msg.edit_text(f"❌ Download failed: {error_msg}")
-                await channel_msg.delete()
+                if 'channel_msg' in locals():
+                    await channel_msg.delete()
 
         except Exception as e:
             logger.error(f"DDL processing failed: {e}")
