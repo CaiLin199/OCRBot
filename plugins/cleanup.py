@@ -1,10 +1,12 @@
 
-# donot use this file commentsed out
+
+# donot use this file commentsed ou
+'''
 from pyrogram import filters
 import logging
 from bot import Bot
 from config import OWNER_IDS, LOG_FILE_NAME
-'''
+
 import os
 from .video_handler import user_data, logger
 
@@ -24,7 +26,6 @@ async def clear_storage(client, message):
     user_id = message.from_user.id
     cleanup(user_id)
     await message.reply("Storage has been cleared.")
-'''
 
 
 @Bot.on_message(filters.user(OWNER_IDS) & filters.command("logs"))
@@ -34,3 +35,4 @@ async def get_log_file(client, message):
     except Exception as e:
         logger.error(f"Failed to send log file to OWNER: {e}")
         await message.reply(f"Error:{e}")
+'''
