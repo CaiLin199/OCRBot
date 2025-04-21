@@ -1,28 +1,23 @@
-# Use minimal base image
-FROM python:3.11-slim-bullseye
+# Use a base image with Python
+FROM python:3.8-slim-buster
 
-# Set working directory
+# Install git and aria2
+RUN apt-get update && apt-get install -y git aria2
+
+# Set the working directory to /app
 WORKDIR /app
 
-# Install dependencies in one layer, clean up thoroughly
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
-    git \
-    && rm -rf /var/lib/apt/lists/* /var/cache/apt/* /tmp/*
+# Copy requirements.txt to the container
+COPY requirements.txt requirements.txt
 
-# Copy requirements first for caching
-COPY requirements.txt .
+# Install the Python dependencies
+RUN pip3 install -r requirements.txt
 
-# Install Python dependencies, avoid cache
-RUN pip install --no-cache-dir -r requirements.txt
-
-# Copy application code
+# Copy the rest of the application code
 COPY . .
 
-# Set environment variables for efficiency
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+# Make aria2.bash executable
+RUN chmod +x aria2.bash
 
-# Run bot
-CMD ["python", "main.py"]
-
+# Start aria2.bash (aria2c) and the bot
+CMD ./aria2.bash & python3 main.py
