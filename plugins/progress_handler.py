@@ -1,3 +1,5 @@
+# commented out don't use this codes
+'''
 from datetime import datetime
 from pyrogram.types import Message
 from config import MAIN_CHANNEL
