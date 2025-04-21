@@ -1,3 +1,6 @@
+# donot use this codes
+
+'''
 import logging
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.enums import ParseMode
@@ -76,3 +79,5 @@ async def post_to_main_channel(client, episode_info, share_link):
     except Exception as e:
         logger.error(f"Failed to post to main channel: {e}")
         return False
+
+        '''
