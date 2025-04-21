@@ -6,7 +6,7 @@ from bot import Bot
 from config import OWNER_IDS, MAIN_CHANNEL, CHANNEL_ID, POST_FORMAT, THUMBNAIL
 from datetime import datetime
 from .shared_data import user_data, is_auto_mode, logger
-from .link_generator import generate_link
+from .link_generation import generate_link
 from .downloader import download_file  # This will use aria2c
 
 # Store post details temporarily
