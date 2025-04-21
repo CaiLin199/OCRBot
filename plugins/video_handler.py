@@ -3,11 +3,11 @@ import asyncio
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot import Bot
-from config import OWNER_IDS, MAIN_CHANNEL, CHANNEL_ID, POST_FORMAT, THUMBNAIL
+from config import OWNER_IDS, MAIN_CHANNEL, CHANNEL_ID, POST_FORMAT
 from datetime import datetime
 from .shared_data import user_data, is_auto_mode, logger
 from .link_generation import generate_link
-from .downloader import download_file  # This will use aria2c
+from .downloader import download_file
 
 # Store post details temporarily
 post_data = {}
@@ -67,27 +67,25 @@ async def handle_ddl(client, message):
 @Bot.on_message(filters.command('post') & filters.user(OWNER_IDS))
 async def handle_post(client, message):
     try:
-        # Initialize post data
         user_id = message.from_user.id
         post_data[user_id] = {
             "step": "rating",
             "data": {}
         }
 
-        # Create buttons for post creation
         buttons = [
+            [InlineKeyboardButton("Title (Required)", callback_data="set_title")],
+            [InlineKeyboardButton("Direct Download Link (Required)", callback_data="set_ddl")],
             [InlineKeyboardButton("Rating", callback_data="set_rating")],
-            [InlineKeyboardButton("Title", callback_data="set_title")],
             [InlineKeyboardButton("Description", callback_data="set_description")],
             [InlineKeyboardButton("Episode Number", callback_data="set_episode")],
             [InlineKeyboardButton("Cover Image URL", callback_data="set_cover")],
             [InlineKeyboardButton("Genres", callback_data="set_genres")],
-            [InlineKeyboardButton("Direct Download Link", callback_data="set_ddl")],
             [InlineKeyboardButton("✅ Create Post", callback_data="create_post")]
         ]
 
         await message.reply(
-            "🎬 <b>Create New Post</b>\n\nPlease fill in the following details:",
+            "🎬 <b>Create New Post</b>\n\nPlease fill in the details (Title and DDL are required):",
             reply_markup=InlineKeyboardMarkup(buttons)
         )
 
@@ -97,11 +95,9 @@ async def handle_post(client, message):
 
 async def upload_and_generate_link(client, file_path, user_id, status_msg, channel_msg):
     try:
-        # Update status
         await status_msg.edit("📤 Uploading to channel...")
         await channel_msg.edit("Status: Uploading to channel...")
         
-        # Upload file to channel with progress
         start_time = datetime.now()
         last_update_time = datetime.now()
 
@@ -122,8 +118,12 @@ async def upload_and_generate_link(client, file_path, user_id, status_msg, chann
                 if "420 FLOOD_WAIT" not in str(e):
                     logger.error(f"Upload progress update failed: {str(e)}")
 
+        thumbnail = "Assist/thumbnail.jpg"
+        if not os.path.exists(thumbnail):
+            logger.warning(f"Thumbnail not found at {thumbnail}")
+            thumbnail = None
+
         # Upload file
-        thumbnail = THUMBNAIL
         uploaded = await client.send_document(
             CHANNEL_ID,
             file_path,
@@ -137,13 +137,16 @@ async def upload_and_generate_link(client, file_path, user_id, status_msg, chann
         
         # Create post with generated link
         post_text = POST_FORMAT.format(
-            title=post_data[user_id]['data'].get('title', ''),
+            title=post_data[user_id]['data'].get('title', 'No Title'),
             description=post_data[user_id]['data'].get('description', ''),
-            rating=post_data[user_id]['data'].get('rating', '⭐️⭐️⭐️⭐️⭐️'),
+            rating=f"{post_data[user_id]['data'].get('rating', '')}%" if post_data[user_id]['data'].get('rating') else '',
             episode=post_data[user_id]['data'].get('episode', ''),
             genres=post_data[user_id]['data'].get('genres', ''),
             link=share_link
         )
+
+        # Clean up empty lines from optional fields
+        post_text = '\n'.join(line for line in post_text.split('\n') if line.strip())
 
         # Send to main channel
         main_post = await client.send_message(
@@ -170,21 +173,17 @@ def create_progress_text(current, total, start_time):
     now = datetime.now()
     diff = (now - start_time).seconds
     
-    # Calculate speed and progress
     speed = current / diff if diff > 0 else 0
     percentage = current * 100 / total if total > 0 else 0
     
-    # Calculate ETA
     if speed > 0:
         eta = (total - current) / speed
     else:
         eta = 0
     
-    # Format time values
     eta_str = str(datetime.fromtimestamp(eta) - datetime.fromtimestamp(0))
     elapsed_time = str(datetime.fromtimestamp(diff) - datetime.fromtimestamp(0))
     
-    # Create progress bar
     bar_length = 20
     filled_length = int(percentage * bar_length / 100)
     bar = '█' * filled_length + '▒' * (bar_length - filled_length)
@@ -219,8 +218,8 @@ async def handle_callbacks(client, callback_query):
             return await callback_query.answer("Session expired. Please start again with /post")
 
         if data == "create_post":
-            # Check if required fields are filled
-            required_fields = ['title', 'description', 'ddl']
+            # Check only for title and ddl as mandatory fields
+            required_fields = ['title', 'ddl']
             missing_fields = [field for field in required_fields if field not in post_data[user_id]['data']]
             
             if missing_fields:
@@ -229,9 +228,30 @@ async def handle_callbacks(client, callback_query):
                     show_alert=True
                 )
 
+            # Create a proper message-like object
+            class CustomMessage:
+                def __init__(self, client, url, user_id, callback_query):
+                    self.command = ['ddl', url]
+                    self.from_user = type('User', (), {'id': user_id})()
+                    self._client = client
+                    self._callback_query = callback_query
+
+                async def reply(self, text, **kwargs):
+                    try:
+                        return await self._callback_query.message.reply(text)
+                    except Exception as e:
+                        logger.error(f"Reply failed: {e}")
+                        return None
+
             # Start download and upload process
-            await callback_query.message.edit_text("Starting download process...")
-            await handle_ddl(client, post_data[user_id]['data']['ddl'])
+            try:
+                await callback_query.message.edit_text("Starting download process...")
+                ddl_url = post_data[user_id]['data']['ddl']
+                custom_msg = CustomMessage(client, ddl_url, user_id, callback_query)
+                await handle_ddl(client, custom_msg)
+            except Exception as e:
+                logger.error(f"DDL processing failed: {e}")
+                await callback_query.message.edit_text(f"❌ Download failed: {str(e)}")
             
             # Clear post data
             del post_data[user_id]
@@ -247,7 +267,7 @@ async def handle_callbacks(client, callback_query):
 
     except Exception as e:
         logger.error(f"Callback handling failed: {e}")
-        await callback_query.answer("An error occurred. Please try again.")
+        await callback_query.answer("An error occurred. Please try again.", show_alert=True)
 
 @Bot.on_message(filters.private & filters.user(OWNER_IDS))
 async def handle_post_input(client, message):
@@ -262,25 +282,25 @@ async def handle_post_input(client, message):
         
         # Show updated post creation menu
         buttons = [
-            [InlineKeyboardButton(f"✅ Rating" if 'rating' in post_data[user_id]['data'] else "Rating", 
-                                callback_data="set_rating")],
-            [InlineKeyboardButton(f"✅ Title" if 'title' in post_data[user_id]['data'] else "Title", 
+            [InlineKeyboardButton(f"{'✅' if 'title' in post_data[user_id]['data'] else ''} Title (Required)", 
                                 callback_data="set_title")],
-            [InlineKeyboardButton(f"✅ Description" if 'description' in post_data[user_id]['data'] else "Description", 
-                                callback_data="set_description")],
-            [InlineKeyboardButton(f"✅ Episode Number" if 'episode' in post_data[user_id]['data'] else "Episode Number", 
-                                callback_data="set_episode")],
-            [InlineKeyboardButton(f"✅ Cover Image URL" if 'cover' in post_data[user_id]['data'] else "Cover Image URL", 
-                                callback_data="set_cover")],
-            [InlineKeyboardButton(f"✅ Genres" if 'genres' in post_data[user_id]['data'] else "Genres", 
-                                callback_data="set_genres")],
-            [InlineKeyboardButton(f"✅ Direct Download Link" if 'ddl' in post_data[user_id]['data'] else "Direct Download Link", 
+            [InlineKeyboardButton(f"{'✅' if 'ddl' in post_data[user_id]['data'] else ''} Direct Download Link (Required)", 
                                 callback_data="set_ddl")],
+            [InlineKeyboardButton(f"{'✅' if 'rating' in post_data[user_id]['data'] else ''} Rating", 
+                                callback_data="set_rating")],
+            [InlineKeyboardButton(f"{'✅' if 'description' in post_data[user_id]['data'] else ''} Description", 
+                                callback_data="set_description")],
+            [InlineKeyboardButton(f"{'✅' if 'episode' in post_data[user_id]['data'] else ''} Episode Number", 
+                                callback_data="set_episode")],
+            [InlineKeyboardButton(f"{'✅' if 'cover' in post_data[user_id]['data'] else ''} Cover Image URL", 
+                                callback_data="set_cover")],
+            [InlineKeyboardButton(f"{'✅' if 'genres' in post_data[user_id]['data'] else ''} Genres", 
+                                callback_data="set_genres")],
             [InlineKeyboardButton("✅ Create Post", callback_data="create_post")]
         ]
 
         await message.reply(
-            "🎬 <b>Create New Post</b>\n\nPlease fill in the remaining details:",
+            "🎬 <b>Create New Post</b>\n\nPlease fill in the remaining details (Title and DDL are required):",
             reply_markup=InlineKeyboardMarkup(buttons)
         )
 
