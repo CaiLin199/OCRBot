@@ -15,19 +15,81 @@ post_handler = PostHandler()
 
 class VideoHandler:
     def __init__(self):
-        self.bot = Bot()
         logger.info("VideoHandler initialized")
-
+        
     async def _handle_ddl(self, client, message):
         """Handle DDL command and process downloads"""
         try:
-            # Rest of your _handle_ddl code remains the same
-            ...
+            # Check if URL is provided
+            if len(message.command) < 2:
+                return await message.reply("Please provide a direct download link!\nUsage: /ddl <url>")
+
+            url = message.command[1]
+            
+            # Create initial status messages
+            status_msg = await message.reply("📥 Starting Download...")
+            channel_msg = await client.send_message(
+                MAIN_CHANNEL,
+                "Status: Starting download..."
+            )
+
+            # Create progress tracker
+            progress = Progress(client, status_msg, channel_msg, "📥 Downloading...")
+
+            try:
+                # Add download to aria2
+                download = aria2.add_uris([url])
+                file_path = None
+
+                while not download.is_complete:
+                    download.update()
+                    current = download.completed_length
+                    total = download.total_length
+                    
+                    await progress.update_progress(current, total)
+                    await asyncio.sleep(1)
+
+                if download.is_complete:
+                    file_path = download.files[0].path
+                    
+                if file_path and os.path.exists(file_path):
+                    # Create upload handler and process upload
+                    upload_handler = UploadHandler(
+                        client, 
+                        message.from_user.id, 
+                        status_msg, 
+                        channel_msg,
+                        post_handler.get_post_data()
+                    )
+                    await upload_handler.upload_file(file_path)
+                    
+                    # Clear post data after successful upload
+                    post_handler.clear_post_data(message.from_user.id)
+                else:
+                    await status_msg.edit("❌ Download failed!")
+                    await channel_msg.delete()
+
+            except Exception as e:
+                error_msg = str(e)
+                if "not found" in error_msg.lower():
+                    error_msg = "File not found. Please check the URL and try again."
+                elif "access denied" in error_msg.lower():
+                    error_msg = "Access denied. Please check if the link is accessible."
+                    
+                logger.error(f"Download failed: {e}")
+                await status_msg.edit(f"❌ Download failed: {error_msg}")
+                await channel_msg.delete()
+
+        except Exception as e:
+            logger.error(f"DDL processing failed: {e}")
+            await message.reply(f"❌ Error: {str(e)}")
+            if 'channel_msg' in locals():
+                await channel_msg.delete()
 
 # Create handler instance
 video_handler = VideoHandler()
 
-# Move command handlers outside the class
+# Command handlers
 @Bot.on_message(filters.command('ddl') & filters.user(OWNER_ID))
 async def handle_ddl(client, message):
     await video_handler._handle_ddl(client, message)
@@ -52,12 +114,3 @@ async def handle_callbacks(client, callback_query):
 @Bot.on_message(filters.private & filters.user(OWNER_ID))
 async def handle_post_input(client, message):
     await post_handler.handle_input(client, message)
-
-# Add a test command to verify bot is working
-@Bot.on_message(filters.command('ping'))
-async def ping_command(client, message):
-    try:
-        await message.reply("Pong! Bot is working!")
-        logger.info("Ping command successful")
-    except Exception as e:
-        logger.error(f"Ping error: {e}")
