@@ -2,7 +2,7 @@ import os
 import asyncio
 from pyrogram import filters
 from bot import Bot
-from config import OWNER_IDS, MAIN_CHANNEL
+from config import OWNER_ID, MAIN_CHANNEL
 from datetime import datetime
 from .shared_data import logger
 from .post_handler import PostHandler
@@ -19,11 +19,11 @@ class VideoHandler:
 
     def setup_handlers(self):
         # Setup command handlers
-        @Bot.on_message(filters.command('ddl') & filters.user(OWNER_IDS))
+        @Bot.on_message(filters.command('ddl') & filters.user(OWNER_ID))
         async def handle_ddl(client, message):
             await self._handle_ddl(client, message)
 
-        @Bot.on_message(filters.command('post') & filters.user(OWNER_IDS))
+        @Bot.on_message(filters.command('post') & filters.user(OWNER_ID))
         async def handle_post(client, message):
             await post_handler.handle_post_command(client, message)
 
@@ -36,7 +36,7 @@ class VideoHandler:
             else:
                 await post_handler.handle_callback(client, callback_query)
 
-        @Bot.on_message(filters.private & filters.user(OWNER_IDS))
+        @Bot.on_message(filters.private & filters.user(OWNER_ID))
         async def handle_post_input(client, message):
             await post_handler.handle_input(client, message)
 
