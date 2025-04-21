@@ -1,3 +1,6 @@
+#donot use these codes commented out
+
+'''
 import os
 import subprocess
 import logging
@@ -48,3 +51,4 @@ async def generate_screenshot(client, message, user_id):
     except subprocess.CalledProcessError as e:
         logger.error(f"Failed to generate screenshot: {e}")
         await status_msg.edit(f"❌ Error: {e}")
+        '''
