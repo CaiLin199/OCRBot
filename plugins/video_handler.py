@@ -3,10 +3,9 @@ import asyncio
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot import Bot
-from config import OWNER_IDS, MAIN_CHANNEL, CHANNEL_ID, POST_FORMAT
+from config import OWNER_IDS, MAIN_CHANNEL, CHANNEL_ID, POST_FORMAT, THUMBNAIL
 from datetime import datetime
 from .shared_data import user_data, is_auto_mode, logger
-from .filename import convert_filename
 from .link_generator import generate_link
 from .downloader import download_file  # This will use aria2c
 
@@ -124,10 +123,12 @@ async def upload_and_generate_link(client, file_path, user_id, status_msg, chann
                     logger.error(f"Upload progress update failed: {str(e)}")
 
         # Upload file
+        thumbnail = THUMBNAIL
         uploaded = await client.send_document(
             CHANNEL_ID,
             file_path,
             force_document=True,
+            thumb=thumbnail,
             progress=upload_progress
         )
 
