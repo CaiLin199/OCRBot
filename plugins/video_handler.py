@@ -7,7 +7,7 @@ from config import OWNER_IDS, MAIN_CHANNEL, CHANNEL_ID, POST_FORMAT
 from datetime import datetime
 from .shared_data import user_data, is_auto_mode, logger
 from .link_generation import generate_link
-from .downloader import download_file
+from .aria2_client import aria2
 
 # Store post details temporarily
 post_data = {}
@@ -30,32 +30,43 @@ async def handle_ddl(client, message):
         start_time = datetime.now()
         last_update_time = datetime.now()
 
-        # Progress callback for aria2c download
-        async def progress_callback(current, total):
-            nonlocal last_update_time
-            now = datetime.now()
-            
-            if (now - last_update_time).seconds < 7:  # Update every 7 seconds
-                return
-                
-            last_update_time = now
-            progress_text = create_progress_text(current, total, start_time)
-            
-            try:
-                await status_msg.edit(progress_text)
-                await channel_msg.edit(progress_text)
-            except Exception as e:
-                if "420 FLOOD_WAIT" not in str(e):
-                    logger.error(f"Progress update failed: {str(e)}")
+        try:
+            # Add download to aria2
+            download = aria2.add_uris([url])
+            file_path = None
 
-        # Download file using aria2c
-        file_path = await download_file(url, progress_callback)
-        
-        if file_path:
-            # Upload to channel
-            await upload_and_generate_link(client, file_path, message.from_user.id, status_msg, channel_msg)
-        else:
-            await status_msg.edit("❌ Download failed!")
+            while not download.is_complete:
+                download.update()
+                current = download.completed_length
+                total = download.total_length
+                
+                now = datetime.now()
+                if (now - last_update_time).seconds >= 7:  # Update every 7 seconds
+                    last_update_time = now
+                    progress_text = create_progress_text(current, total, start_time)
+                    
+                    try:
+                        await status_msg.edit(progress_text)
+                        await channel_msg.edit(progress_text)
+                    except Exception as e:
+                        if "420 FLOOD_WAIT" not in str(e):
+                            logger.error(f"Progress update failed: {str(e)}")
+                
+                await asyncio.sleep(1)
+
+            if download.is_complete:
+                file_path = download.files[0].path
+                
+            if file_path and os.path.exists(file_path):
+                # Upload to channel
+                await upload_and_generate_link(client, file_path, message.from_user.id, status_msg, channel_msg)
+            else:
+                await status_msg.edit("❌ Download failed!")
+                await channel_msg.delete()
+
+        except Exception as e:
+            logger.error(f"Download failed: {e}")
+            await status_msg.edit(f"❌ Download failed: {str(e)}")
             await channel_msg.delete()
 
     except Exception as e:
@@ -133,7 +144,7 @@ async def upload_and_generate_link(client, file_path, user_id, status_msg, chann
         )
 
         # Generate shareable link
-        share_link = await generate_link(client, uploaded.message_id)
+        share_link = await generate_link(client, uploaded)
         
         # Create post with generated link
         post_text = POST_FORMAT.format(
