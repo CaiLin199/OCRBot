@@ -1,7 +1,7 @@
 import os
 from datetime import datetime
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from config import CHANNEL_ID, MAIN_CHANNEL
+from config import CHANNEL_ID, MAIN_CHANNEL, THUMBNAIL
 from .shared_data import logger
 from .link_generation import generate_link
 from .progress import Progress
@@ -18,7 +18,7 @@ class UploadHandler:
     async def upload_file(self, file_path):
         try:
             # Check for thumbnail
-            thumbnail = "Assist/thumbnail.jpg"
+            thumbnail = THUMBNAIL
             if not os.path.exists(thumbnail):
                 logger.warning(f"Thumbnail not found at {thumbnail}")
                 thumbnail = None
