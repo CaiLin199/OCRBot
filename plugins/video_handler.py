@@ -1,7 +1,7 @@
 import os
 import asyncio
 from pyrogram import filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, Message
 from bot import Bot
 from config import OWNER_ID, MAIN_CHANNEL
 from datetime import datetime
@@ -10,7 +10,6 @@ from .post_handler import PostHandler
 from .upload_handler import UploadHandler
 from .progress import Progress
 from .aria2_client import aria2
-from .link_generation import generate_link
 
 # Initialize handlers
 post_handler = PostHandler()
@@ -20,17 +19,21 @@ class VideoHandler:
         logger.info("VideoHandler initialized")
         self.thumbnail_path = "Assist/Images/thumbnail.jpg"
         
-    async def _handle_ddl(self, client, message):
+    async def _handle_ddl(self, client, message, ddl_url=None):
         """Handle DDL command and process downloads"""
         try:
-            # Check if URL is provided
-            if len(message.command) < 2:
-                return await message.reply("Please provide a direct download link!\nUsage: /ddl <url>")
-
-            url = message.command[1]
+            # Get URL from message or parameter
+            if isinstance(message, Message):
+                if len(message.command) < 2 and not ddl_url:
+                    return await message.reply("Please provide a direct download link!\nUsage: /ddl <url>")
+                url = ddl_url or message.command[1]
+                reply_to = message
+            else:
+                url = ddl_url
+                reply_to = message
             
             # Create initial status messages
-            status_msg = await message.reply("📥 Starting Download...")
+            status_msg = await reply_to.reply("📥 Starting Download...")
             channel_msg = await client.send_message(
                 MAIN_CHANNEL,
                 "Status: Starting download..."
@@ -57,7 +60,7 @@ class VideoHandler:
                     
                 if file_path and os.path.exists(file_path):
                     # Get user's post data
-                    user_id = message.from_user.id
+                    user_id = reply_to.from_user.id
                     post_data = post_handler.get_post_data(user_id)
                     
                     # Create upload handler and process upload
@@ -77,7 +80,7 @@ class VideoHandler:
                     
                     if msg_id:
                         # Generate shareable link
-                        
+                        from .link_generation import generate_link
                         share_link = await generate_link(client, MAIN_CHANNEL, msg_id)
                         
                         if share_link:
@@ -87,7 +90,7 @@ class VideoHandler:
                             # Create post in main channel with cover image and button
                             if post_data.get('cover_url'):
                                 # Create button with share link
-                                keyboard = [[InlineKeyboardButton("Watch Now (No Ads, URL)", url=share_link)]]
+                                keyboard = [[InlineKeyboardButton("🎥 Watch Now", url=share_link)]]
                                 reply_markup = InlineKeyboardMarkup(keyboard)
                                 
                                 # Send post with cover image
@@ -109,6 +112,13 @@ class VideoHandler:
                     
                     # Clear post data after successful upload
                     post_handler.clear_post_data(user_id)
+                    
+                    # Clean up downloaded file
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
+                        
                 else:
                     await status_msg.edit("❌ Download failed!")
                     await channel_msg.delete()
@@ -126,7 +136,7 @@ class VideoHandler:
 
         except Exception as e:
             logger.error(f"DDL processing failed: {e}")
-            await message.reply(f"❌ Error: {str(e)}")
+            await reply_to.reply(f"❌ Error: {str(e)}")
             if 'channel_msg' in locals():
                 await channel_msg.delete()
 
@@ -146,9 +156,9 @@ async def handle_post(client, message):
 async def handle_callbacks(client, callback_query):
     try:
         if callback_query.data == "create_post":
-            success, custom_msg = await post_handler.handle_callback(client, callback_query)
-            if success:
-                await video_handler._handle_ddl(client, custom_msg)
+            success, ddl_url = await post_handler.handle_callback(client, callback_query)
+            if success and ddl_url:
+                await video_handler._handle_ddl(client, callback_query.message, ddl_url)
         else:
             await post_handler.handle_callback(client, callback_query)
     except Exception as e:
