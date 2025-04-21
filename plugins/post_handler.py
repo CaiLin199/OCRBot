@@ -1,160 +1,163 @@
-import os
-import asyncio
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from bot import Bot
 from config import OWNER_ID, MAIN_CHANNEL
-from datetime import datetime
 from .shared_data import logger
-from .post_handler import PostHandler
-from .upload_handler import UploadHandler
-from .progress import Progress
-from .aria2_client import aria2
-from .link_generation import generate_link
 
-# Initialize handlers
-post_handler = PostHandler()
-
-class VideoHandler:
+class PostHandler:
     def __init__(self):
-        logger.info("VideoHandler initialized")
-        self.thumbnail_path = "Assist/Images/thumbnail.jpg"
-        
-    async def _handle_ddl(self, client, message):
-        """Handle DDL command and process downloads"""
+        self.post_data = {}
+
+    @staticmethod
+    def _create_post_menu(user_data=None):
+        """Create the post creation menu with checkmarks for filled fields"""
+        def get_button_text(field, display_name):
+            if user_data and field in user_data:
+                return f"✅ {display_name}"  # Add checkmark if field is filled
+            return display_name
+
+        keyboard = [
+            [
+                InlineKeyboardButton(get_button_text('title', "Title"), callback_data="title"),
+                InlineKeyboardButton(get_button_text('rating', "Rating"), callback_data="rating")
+            ],
+            [
+                InlineKeyboardButton(get_button_text('status', "Status"), callback_data="status"),
+                InlineKeyboardButton(get_button_text('episode', "Episode"), callback_data="episode")
+            ],
+            [
+                InlineKeyboardButton(get_button_text('size', "Size"), callback_data="size"),
+                InlineKeyboardButton(get_button_text('genres', "Genres"), callback_data="genres")
+            ],
+            [
+                InlineKeyboardButton(get_button_text('synopsis', "Synopsis"), callback_data="synopsis"),
+                InlineKeyboardButton(get_button_text('cover_url', "Cover URL"), callback_data="cover_url")
+            ],
+            [
+                InlineKeyboardButton(get_button_text('ddl', "Direct Link"), callback_data="ddl")
+            ],
+            [
+                InlineKeyboardButton("CREATE POST", callback_data="create_post")
+            ]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    def format_post(self, data):
+        """Format post data according to template"""
+        synopsis = data.get('synopsis', 'N/A')
+        if len(synopsis) > 100:  # Truncate synopsis if too long
+            synopsis = synopsis[:97] + "..."
+
+        template = (
+            f"☗   {data.get('title', 'N/A')}\n\n"
+            f"⦿   Ratings: {data.get('rating', 'N/A')}\n"
+            f"⦿   Status: {data.get('status', 'N/A')}\n"
+            f"⦿   Episode: {data.get('episode', 'N/A')}\n"
+            f"⦿   Size: {data.get('size', 'N/A')}\n"
+            f"⦿   Genres: {data.get('genres', 'N/A')}\n\n"
+            f"◆   Synopsis: {synopsis}"
+        )
+        return template
+
+    async def handle_post_command(self, client, message):
+        """Handle /post command"""
         try:
-            # Check if URL is provided
-            if len(message.command) < 2:
-                return await message.reply("Please provide a direct download link!\nUsage: /ddl <url>")
-
-            url = message.command[1]
+            user_id = message.from_user.id
+            self.post_data[user_id] = {}
             
-            # Create initial status messages
-            status_msg = await message.reply("📥 Starting Download...")
-            channel_msg = await client.send_message(
-                MAIN_CHANNEL,
-                "Status: Starting download..."
+            await message.reply(
+                "Please fill in the post details:",
+                reply_markup=self._create_post_menu(self.post_data.get(user_id))
             )
+        except Exception as e:
+            logger.error(f"Post creation failed: {e}")
+            await message.reply(f"❌ Error: {str(e)}")
 
-            # Create progress tracker
-            progress = Progress(client, status_msg, channel_msg, "📥 Downloading...")
+    async def handle_callback(self, client, callback_query):
+        """Handle callback queries for post creation"""
+        try:
+            user_id = callback_query.from_user.id
+            data = callback_query.data
 
-            try:
-                # Add download to aria2
-                download = aria2.add_uris([url])
-                file_path = None
+            if data == "create_post":
+                required_fields = ['title', 'ddl']
+                if user_id not in self.post_data or not all(field in self.post_data[user_id] for field in required_fields):
+                    await callback_query.answer("Title and Direct Link are required!", show_alert=True)
+                    return False, None
 
-                while not download.is_complete:
-                    download.update()
-                    current = download.completed_length
-                    total = download.total_length
-                    
-                    await progress.update_progress(current, total)
-                    await asyncio.sleep(1)
+                post_text = self.format_post(self.post_data[user_id])
+                await callback_query.message.edit_text(post_text)
+                return True, self.post_data[user_id]['ddl']
 
-                if download.is_complete:
-                    file_path = download.files[0].path
-                    
-                if file_path and os.path.exists(file_path):
-                    # Get user's post data
-                    user_id = message.from_user.id
-                    post_data = post_handler.get_post_data(user_id)
-                    
-                    # Create upload handler and process upload
-                    upload_handler = UploadHandler(
-                        client, 
-                        user_id, 
-                        status_msg, 
-                        channel_msg,
-                        post_data
-                    )
-                    
-                    # Upload file with thumbnail
-                    msg_id = await upload_handler.upload_file(
-                        file_path,
-                        thumb=self.thumbnail_path
-                    )
-                    
-                    if msg_id:
-                        # Generate shareable link
-                        
-                        share_link = await generate_link(client, MAIN_CHANNEL, msg_id)
-                        
-                        if share_link:
-                            # Send success message to user
-                            await status_msg.edit(f"✅ Upload Complete!\n\n🔗 Share Link: {share_link}")
-                            
-                            # Create post in main channel with cover image and button
-                            if post_data.get('cover_url'):
-                                # Create button with share link
-                                keyboard = [[InlineKeyboardButton("Watch Now (No Ads, URL)", url=share_link)]]
-                                reply_markup = InlineKeyboardMarkup(keyboard)
-                                
-                                # Send post with cover image
-                                await client.send_photo(
-                                    chat_id=MAIN_CHANNEL,
-                                    photo=post_data['cover_url'],
-                                    caption=post_handler.format_post(post_data),
-                                    reply_markup=reply_markup
-                                )
-                            else:
-                                # Send post without cover image
-                                keyboard = [[InlineKeyboardButton("🎥 Watch Now", url=share_link)]]
-                                reply_markup = InlineKeyboardMarkup(keyboard)
-                                await client.send_message(
-                                    chat_id=MAIN_CHANNEL,
-                                    text=post_handler.format_post(post_data),
-                                    reply_markup=reply_markup
-                                )
-                    
-                    # Clear post data after successful upload
-                    post_handler.clear_post_data(user_id)
-                else:
-                    await status_msg.edit("❌ Download failed!")
-                    await channel_msg.delete()
+            # Initialize post data for user if not exists
+            if user_id not in self.post_data:
+                self.post_data[user_id] = {}
 
-            except Exception as e:
-                error_msg = str(e)
-                if "not found" in error_msg.lower():
-                    error_msg = "File not found. Please check the URL and try again."
-                elif "access denied" in error_msg.lower():
-                    error_msg = "Access denied. Please check if the link is accessible."
-                    
-                logger.error(f"Download failed: {e}")
-                await status_msg.edit(f"❌ Download failed: {error_msg}")
-                await channel_msg.delete()
+            field_prompts = {
+                'title': "Enter the title:",
+                'rating': "Enter the rating (e.g., 9.8 or 90%):",
+                'status': "Enter the status (e.g., Airing):",
+                'episode': "Enter the episode number:",
+                'size': "Enter the size (e.g., 84.9 MB):",
+                'genres': "Enter the genres (comma-separated):",
+                'synopsis': "Enter the synopsis:",
+                'cover_url': "Enter the cover image URL:",
+                'ddl': "Enter the direct download link:"
+            }
+
+            await callback_query.message.edit_text(field_prompts.get(data, f"Enter the {data}:"))
+            self.post_data[user_id]['current_field'] = data
+            return False, None
 
         except Exception as e:
-            logger.error(f"DDL processing failed: {e}")
-            await message.reply(f"❌ Error: {str(e)}")
-            if 'channel_msg' in locals():
-                await channel_msg.delete()
+            logger.error(f"Callback error: {e}")
+            await callback_query.answer("An error occurred", show_alert=True)
+            return False, None
 
-# Create handler instance
-video_handler = VideoHandler()
+    async def handle_input(self, client, message):
+        """Handle user input for post fields"""
+        try:
+            user_id = message.from_user.id
+            if user_id not in self.post_data or 'current_field' not in self.post_data[user_id]:
+                return
 
-# Command handlers
-@Bot.on_message(filters.command('ddl') & filters.user(OWNER_ID))
-async def handle_ddl(client, message):
-    await video_handler._handle_ddl(client, message)
+            field = self.post_data[user_id]['current_field']
+            text = message.text.strip()
 
-@Bot.on_message(filters.command('post') & filters.user(OWNER_ID))
-async def handle_post(client, message):
-    await post_handler.handle_post_command(client, message)
+            # Validate input based on field
+            if field == 'rating':
+                text = text.replace('%', '').strip()
+                try:
+                    rating = float(text)
+                    if rating > 100:  # Convert 10-point scale to percentage
+                        rating = rating / 10
+                    text = f"{rating}%"
+                except ValueError:
+                    await message.reply("Please enter a valid rating number!")
+                    return
+            elif field == 'cover_url':
+                if not text.startswith(('http://', 'https://')):
+                    await message.reply("Please enter a valid image URL starting with http:// or https://")
+                    return
 
-@Bot.on_callback_query()
-async def handle_callbacks(client, callback_query):
-    try:
-        if callback_query.data == "create_post":
-            success, custom_msg = await post_handler.handle_callback(client, callback_query)
-            if success:
-                await video_handler._handle_ddl(client, custom_msg)
-        else:
-            await post_handler.handle_callback(client, callback_query)
-    except Exception as e:
-        logger.error(f"Callback error: {e}")
-        await callback_query.answer("An error occurred", show_alert=True)
+            # Save the validated input
+            self.post_data[user_id][field] = text
 
-@Bot.on_message(filters.private & filters.user(OWNER_ID))
-async def handle_post_input(client, message):
-    await post_handler.handle_input(client, message)
+            # Show updated post preview
+            preview = self.format_post(self.post_data[user_id])
+            await message.reply(
+                f"✅ {field.title()} set successfully!\n\nPreview:\n\n{preview}",
+                reply_markup=self._create_post_menu(self.post_data[user_id])
+            )
+
+        except Exception as e:
+            logger.error(f"Input handling failed: {e}")
+            await message.reply("❌ Error occurred. Please try again.")
+
+    def get_post_data(self, user_id):
+        """Get post data for a user"""
+        return self.post_data.get(user_id, {})
+
+    def clear_post_data(self, user_id):
+        """Clear post data for a user"""
+        if user_id in self.post_data:
+            del self.post_data[user_id]
