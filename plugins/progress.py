@@ -16,7 +16,7 @@ class Progress:
         else:
             percentage = current * 100 / total
         filled_length = int(percentage * bar_length / 100)
-        bar = '•' * filled_length + '°' * (bar_length - filled_length)
+        bar = '■' * filled_length + '□' * (bar_length - filled_length)
         return bar, percentage
         
     def get_human_bytes(self, size):
