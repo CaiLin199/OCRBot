@@ -1,9 +1,5 @@
-#(©)Codexbotz
-#@iryme
-
-
-
-
+from .video_handler import video_handler
+from .post_handler import post_handler
 
 from aiohttp import web
 from .route import routes
