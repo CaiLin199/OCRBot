@@ -3,7 +3,7 @@ import asyncio
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot import Bot
-from config import OWNER_IDS, MAIN_CHANNEL, CHANNEL_ID, POST_FORMAT
+from config import OWNER_IDS, MAIN_CHANNEL, CHANNEL_ID, POST_FORMAT, THUMBNAIL
 from datetime import datetime
 from .shared_data import user_data, is_auto_mode, logger
 from .link_generation import generate_link
@@ -129,7 +129,7 @@ async def upload_and_generate_link(client, file_path, user_id, status_msg, chann
                 if "420 FLOOD_WAIT" not in str(e):
                     logger.error(f"Upload progress update failed: {str(e)}")
 
-        thumbnail = "Assist/thumbnail.jpg"
+        thumbnail = THUMBNAIL
         if not os.path.exists(thumbnail):
             logger.warning(f"Thumbnail not found at {thumbnail}")
             thumbnail = None
