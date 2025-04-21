@@ -1,6 +1,7 @@
 import os
 import asyncio
 from pyrogram import filters
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from bot import Bot
 from config import OWNER_ID, MAIN_CHANNEL
 from datetime import datetime
@@ -9,6 +10,7 @@ from .post_handler import PostHandler
 from .upload_handler import UploadHandler
 from .progress import Progress
 from .aria2_client import aria2
+from .link_generation import generate_link
 
 # Initialize handlers
 post_handler = PostHandler()
@@ -16,6 +18,7 @@ post_handler = PostHandler()
 class VideoHandler:
     def __init__(self):
         logger.info("VideoHandler initialized")
+        self.thumbnail_path = "Assist/Images/thumbnail.jpg"
         
     async def _handle_ddl(self, client, message):
         """Handle DDL command and process downloads"""
@@ -53,18 +56,59 @@ class VideoHandler:
                     file_path = download.files[0].path
                     
                 if file_path and os.path.exists(file_path):
+                    # Get user's post data
+                    user_id = message.from_user.id
+                    post_data = post_handler.get_post_data(user_id)
+                    
                     # Create upload handler and process upload
                     upload_handler = UploadHandler(
                         client, 
-                        message.from_user.id, 
+                        user_id, 
                         status_msg, 
                         channel_msg,
-                        post_handler.get_post_data()
+                        post_data
                     )
-                    await upload_handler.upload_file(file_path)
+                    
+                    # Upload file with thumbnail
+                    msg_id = await upload_handler.upload_file(
+                        file_path,
+                        thumb=self.thumbnail_path
+                    )
+                    
+                    if msg_id:
+                        # Generate shareable link
+                        
+                        share_link = await generate_link(client, MAIN_CHANNEL, msg_id)
+                        
+                        if share_link:
+                            # Send success message to user
+                            await status_msg.edit(f"✅ Upload Complete!\n\n🔗 Share Link: {share_link}")
+                            
+                            # Create post in main channel with cover image and button
+                            if post_data.get('cover_url'):
+                                # Create button with share link
+                                keyboard = [[InlineKeyboardButton("Watch Now (No Ads, URL)", url=share_link)]]
+                                reply_markup = InlineKeyboardMarkup(keyboard)
+                                
+                                # Send post with cover image
+                                await client.send_photo(
+                                    chat_id=MAIN_CHANNEL,
+                                    photo=post_data['cover_url'],
+                                    caption=post_handler.format_post(post_data),
+                                    reply_markup=reply_markup
+                                )
+                            else:
+                                # Send post without cover image
+                                keyboard = [[InlineKeyboardButton("🎥 Watch Now", url=share_link)]]
+                                reply_markup = InlineKeyboardMarkup(keyboard)
+                                await client.send_message(
+                                    chat_id=MAIN_CHANNEL,
+                                    text=post_handler.format_post(post_data),
+                                    reply_markup=reply_markup
+                                )
                     
                     # Clear post data after successful upload
-                    post_handler.clear_post_data(message.from_user.id)
+                    post_handler.clear_post_data(user_id)
                 else:
                     await status_msg.edit("❌ Download failed!")
                     await channel_msg.delete()
