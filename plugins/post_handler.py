@@ -1,73 +1,69 @@
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
-from bot import Bot
-from config import OWNER_IDS, POST_FORMAT, MAIN_CHANNEL
-from .shared_data import logger, user_data
-from .upload_handler import UploadHandler
+from config import OWNER_ID, MAIN_CHANNEL
+from .shared_data import logger
 
 class PostHandler:
     def __init__(self):
         self.post_data = {}
 
     @staticmethod
-    def _create_post_menu(user_id, post_data):
+    def _create_post_menu(user_data=None):
         """Create the post creation menu with checkmarks for filled fields"""
-        return InlineKeyboardMarkup([
-            [InlineKeyboardButton(
-                f"{'✅' if 'title' in post_data[user_id]['data'] else ''} Title (Required)", 
-                callback_data="set_title"
-            )],
-            [InlineKeyboardButton(
-                f"{'✅' if 'ddl' in post_data[user_id]['data'] else ''} Direct Download Link (Required)", 
-                callback_data="set_ddl"
-            )],
-            [InlineKeyboardButton(
-                f"{'✅' if 'rating' in post_data[user_id]['data'] else ''} Rating (0-100)", 
-                callback_data="set_rating"
-            )],
-            [InlineKeyboardButton(
-                f"{'✅' if 'description' in post_data[user_id]['data'] else ''} Description", 
-                callback_data="set_description"
-            )],
-            [InlineKeyboardButton(
-                f"{'✅' if 'episode' in post_data[user_id]['data'] else ''} Episode Number", 
-                callback_data="set_episode"
-            )],
-            [InlineKeyboardButton(
-                f"{'✅' if 'cover' in post_data[user_id]['data'] else ''} Cover Image URL", 
-                callback_data="set_cover"
-            )],
-            [InlineKeyboardButton(
-                f"{'✅' if 'genres' in post_data[user_id]['data'] else ''} Genres", 
-                callback_data="set_genres"
-            )],
-            [InlineKeyboardButton("✅ Create Post", callback_data="create_post")]
-        ])
+        def get_button_text(field, display_name):
+            if user_data and field in user_data:
+                return f"✅ {display_name}"  # Add checkmark if field is filled
+            return display_name
 
-    async def validate_rating(self, rating_text):
-        """Validate rating is between 0-100"""
-        try:
-            rating = int(rating_text)
-            if 0 <= rating <= 100:
-                return True
-            return False
-        except ValueError:
-            return False
+        keyboard = [
+            [
+                InlineKeyboardButton(get_button_text('title', "Title"), callback_data="title"),
+                InlineKeyboardButton(get_button_text('rating', "Rating"), callback_data="rating")
+            ],
+            [
+                InlineKeyboardButton(get_button_text('status', "Status"), callback_data="status"),
+                InlineKeyboardButton(get_button_text('episode', "Episode"), callback_data="episode")
+            ],
+            [
+                InlineKeyboardButton(get_button_text('size', "Size"), callback_data="size"),
+                InlineKeyboardButton(get_button_text('genres', "Genres"), callback_data="genres")
+            ],
+            [
+                InlineKeyboardButton(get_button_text('synopsis', "Synopsis"), callback_data="synopsis")
+            ],
+            [
+                InlineKeyboardButton("Create Post", callback_data="create_post")
+            ]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    def format_post(self, data):
+        """Format post data according to template"""
+        synopsis = data.get('synopsis', 'N/A')
+        if len(synopsis) > 100:  # Truncate synopsis if too long
+            synopsis = synopsis[:97] + "..."
+
+        template = (
+            f"☗   {data.get('title', 'N/A')}\n\n"
+            f"⦿   Ratings: {data.get('rating', 'N/A')}\n"
+            f"⦿   Status: {data.get('status', 'N/A')}\n"
+            f"⦿   Episode: {data.get('episode', 'N/A')}\n"
+            f"⦿   Size: {data.get('size', 'N/A')}\n"
+            f"⦿   Genres: {data.get('genres', 'N/A')}\n\n"
+            f"◆   Synopsis: {synopsis}"
+        )
+        return template
 
     async def handle_post_command(self, client, message):
-        """Handle the /post command"""
+        """Handle /post command"""
         try:
             user_id = message.from_user.id
-            self.post_data[user_id] = {
-                "step": "rating",
-                "data": {}
-            }
-
+            self.post_data[user_id] = {}
+            
             await message.reply(
-                "🎬 <b>Create New Post</b>\n\nPlease fill in the details (Title and DDL are required):",
-                reply_markup=self._create_post_menu(user_id, self.post_data)
+                "Please fill in the post details:",
+                reply_markup=self._create_post_menu(self.post_data.get(user_id))
             )
-
         except Exception as e:
             logger.error(f"Post creation failed: {e}")
             await message.reply(f"❌ Error: {str(e)}")
@@ -78,106 +74,82 @@ class PostHandler:
             user_id = callback_query.from_user.id
             data = callback_query.data
 
-            if user_id not in self.post_data:
-                return await callback_query.answer("Session expired. Please start again with /post")
-
             if data == "create_post":
-                return await self._handle_create_post(client, callback_query, user_id)
+                if user_id not in self.post_data or not self.post_data[user_id]:
+                    await callback_query.answer("Please fill in the post details first!")
+                    return False, None
 
-            # Handle different input fields
-            field = data.replace('set_', '')
-            self.post_data[user_id]['step'] = field
-            
+                if 'title' not in self.post_data[user_id]:
+                    await callback_query.answer("Title is required!")
+                    return False, None
+
+                post_text = self.format_post(self.post_data[user_id])
+                await callback_query.message.edit_text(post_text)
+                return True, callback_query.message
+
+            # Initialize post data for user if not exists
+            if user_id not in self.post_data:
+                self.post_data[user_id] = {}
+
             field_prompts = {
-                'title': "Please send the title for the post:",
-                'ddl': "Please send the direct download link:",
-                'rating': "Please send the rating (0-100):",
-                'description': "Please send the description/synopsis:",
-                'episode': "Please send the episode number:",
-                'cover': "Please send the cover image URL:",
-                'genres': "Please send the genres (comma-separated):"
+                'title': "Enter the title:",
+                'rating': "Enter the rating (e.g., 9.8 or 90%):",
+                'status': "Enter the status (e.g., Airing):",
+                'episode': "Enter the episode number:",
+                'size': "Enter the size (e.g., 84.9 MB):",
+                'genres': "Enter the genres (comma-separated):",
+                'synopsis': "Enter the synopsis:"
             }
-            
-            await callback_query.message.edit_text(
-                field_prompts.get(field, f"Please send the {field.replace('_', ' ')} for the post:")
-            )
+
+            await callback_query.message.edit_text(field_prompts.get(data, f"Enter the {data}:"))
+            self.post_data[user_id]['current_field'] = data
+            return False, None
 
         except Exception as e:
-            logger.error(f"Callback handling failed: {e}")
-            await callback_query.answer("An error occurred. Please try again.", show_alert=True)
-
-    async def _handle_create_post(self, client, callback_query, user_id):
-        """Handle the creation of the post"""
-        # Check required fields
-        required_fields = ['title', 'ddl']
-        missing_fields = [field for field in required_fields 
-                         if field not in self.post_data[user_id]['data']]
-        
-        if missing_fields:
-            return await callback_query.answer(
-                f"Please fill in required fields: {', '.join(missing_fields)}",
-                show_alert=True
-            )
-
-        # Create a proper message-like object for DDL handling
-        class CustomMessage:
-            def __init__(self, client, url, user_id, callback_query):
-                self.command = ['ddl', url]
-                self.from_user = type('User', (), {'id': user_id})()
-                self._client = client
-                self._callback_query = callback_query
-
-            async def reply(self, text, **kwargs):
-                try:
-                    return await self._callback_query.message.reply(text)
-                except Exception as e:
-                    logger.error(f"Reply failed: {e}")
-                    return None
-
-        try:
-            await callback_query.message.edit_text("Starting download process...")
-            ddl_url = self.post_data[user_id]['data']['ddl']
-            custom_msg = CustomMessage(client, ddl_url, user_id, callback_query)
-            
-            # The DDL handler will be called from video_handler.py
-            return True, custom_msg
-
-        except Exception as e:
-            logger.error(f"Post creation failed: {e}")
-            await callback_query.message.edit_text(f"❌ Failed: {str(e)}")
+            logger.error(f"Callback error: {e}")
+            await callback_query.answer("An error occurred", show_alert=True)
             return False, None
 
     async def handle_input(self, client, message):
-        """Handle user input during post creation"""
+        """Handle user input for post fields"""
         try:
             user_id = message.from_user.id
-            
-            if user_id not in self.post_data:
+            if user_id not in self.post_data or 'current_field' not in self.post_data[user_id]:
                 return
 
-            step = self.post_data[user_id]['step']
+            field = self.post_data[user_id]['current_field']
+            text = message.text.strip()
 
-            # Validate rating if that's the current step
-            if step == 'rating' and not await self.validate_rating(message.text):
-                await message.reply("Please send a valid rating between 0 and 100.")
-                return
+            # Validate input based on field
+            if field == 'rating':
+                # Accept both percentage and decimal formats
+                text = text.replace('%', '').strip()
+                try:
+                    rating = float(text)
+                    if rating > 100:  # Convert 10-point scale to percentage
+                        rating = rating / 10
+                    text = f"{rating}%"
+                except ValueError:
+                    await message.reply("Please enter a valid rating number!")
+                    return
 
-            # Save the input
-            self.post_data[user_id]['data'][step] = message.text
+            # Save the validated input
+            self.post_data[user_id][field] = text
 
-            # Show updated menu
+            # Show updated post preview
+            preview = self.format_post(self.post_data[user_id])
             await message.reply(
-                "🎬 <b>Create New Post</b>\n\nPlease fill in the remaining details (Title and DDL are required):",
-                reply_markup=self._create_post_menu(user_id, self.post_data)
+                f"✅ {field.title()} set successfully!\n\nPreview:\n\n{preview}",
+                reply_markup=self._create_post_menu(self.post_data[user_id])
             )
 
         except Exception as e:
             logger.error(f"Input handling failed: {e}")
-            await message.reply("An error occurred. Please try again with /post")
+            await message.reply("❌ Error occurred. Please try again.")
 
-    def get_post_data(self):
-        """Get the current post data"""
-        return self.post_data
+    def get_post_data(self, user_id):
+        """Get post data for a user"""
+        return self.post_data.get(user_id, {})
 
     def clear_post_data(self, user_id):
         """Clear post data for a user"""
