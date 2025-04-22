@@ -12,8 +12,8 @@ async def generate_link(client, main_channel, message, user_data=None):
     """Generate shareable link for a file message."""
     try:
         msg_id = message.id
-        # Use MAIN_CHANNEL (or main_channel) in the encoding logic
-        base64_string = await encode(f"get-{msg_id * abs(main_channel)}")
+        # Use CHANNEL (or channel_id) in the encoding logic
+        base64_string = await encode(f"get-{msg_id * abs(channel_id)}")
         link = f"https://t.me/HeavenlySubsBot?start={base64_string}"
         return link
     except Exception as e:
