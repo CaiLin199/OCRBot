@@ -12,7 +12,6 @@ class UploadHandler:
         self.user_id = user_id
         self.status_msg = status_msg
         self.channel_msg = channel_msg
-        # Simplified data extraction with direct access
         self.post_data = post_data.get(str(user_id), {}).get('data', {}) if isinstance(post_data, dict) else {}
         self.progress = Progress(client, status_msg, channel_msg, action="📤 Uploading to channel...")
 
@@ -22,18 +21,27 @@ class UploadHandler:
             return None
 
         try:
+            # Handle thumbnail
+            thumb = None
+            if os.path.exists(THUMBNAIL):
+                try:
+                    thumb = await self.client.upload_media(THUMBNAIL)
+                except Exception as e:
+                    logger.warning(f"Failed to upload thumbnail: {e}")
+
             # Upload with progress
             uploaded = await self.client.send_document(
                 CHANNEL_ID,
                 file_path,
                 force_document=True,
+                thumb=thumb,
                 progress=self.progress.update_progress
             )
 
             if not uploaded:
                 raise Exception("Upload failed: No response from Telegram")
 
-            # Generate shareable link
+            # Generate shareable link - Fixed the argument count issue
             share_link = await generate_link(self.client, uploaded)
             if not share_link:
                 raise Exception("Failed to generate share link")
@@ -57,8 +65,9 @@ class UploadHandler:
                             caption=post_text,
                             reply_markup=reply_markup
                         )
-                    except Exception:
-                        # Fallback to message without photo if photo fails
+                    except Exception as e:
+                        logger.error(f"Failed to send with photo: {e}")
+                        # Fallback to message without photo
                         await self.client.send_message(
                             MAIN_CHANNEL,
                             post_text,
@@ -73,7 +82,7 @@ class UploadHandler:
                         reply_markup=reply_markup
                     )
 
-                # Clean up only after successful send
+                # Clean up
                 try:
                     os.remove(file_path)
                 except Exception as e:
@@ -100,7 +109,7 @@ class UploadHandler:
     def _create_safe_post(self):
         """Creates the post format with maximum reliability"""
         try:
-            # Safe string extraction with type checking
+            # Safe string extraction
             def safe_str(key):
                 val = self.post_data.get(key, '')
                 return str(val) if val is not None else ''
@@ -109,15 +118,14 @@ class UploadHandler:
             if not title:
                 return "☗   Upload Complete"
 
-            post_parts = [f"☗   {title}\n"]  # Start with title
+            post_parts = [f"☗   {title}\n"]
 
-            # Only add fields if they exist and have content
             rating = safe_str('rating')
             episode = safe_str('episode')
             genres = safe_str('genres')
             description = safe_str('description')
 
-            if any([rating, episode, genres]):  # Only add these parts if at least one exists
+            if any([rating, episode, genres]):
                 if rating:
                     post_parts.append(f"⦿   Ratings: {rating}")
                 if episode:
@@ -125,15 +133,12 @@ class UploadHandler:
                 if genres:
                     post_parts.append(f"⦿   Genres: {genres}")
                 
-                # Add empty line before synopsis only if we have previous fields
                 if description:
                     post_parts.append("")
                     post_parts.append(f"◆   Synopsis: {description}")
 
-            # Join with newlines and ensure proper formatting
             return "\n".join(post_parts)
 
         except Exception as e:
             logger.error(f"Error in post creation: {e}")
-            # Ultimate fallback - always return something valid
             return f"☗   {self.post_data.get('title', 'Upload Complete')}"
