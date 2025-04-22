@@ -21,12 +21,18 @@ class UploadHandler:
             return None
 
         try:
-            # Upload with progress
+            # Get file size for progress tracking
+            file_size = os.path.getsize(file_path)
+
+            # Upload with optimized settings
             uploaded = await self.client.send_document(
-                CHANNEL_ID,
-                file_path,
+                chat_id=CHANNEL_ID,
+                document=file_path,
                 force_document=True,
-                progress=self.progress.update_progress
+                file_name=os.path.basename(file_path),  # Preserve original filename
+                progress=self.progress.update_progress,
+                progress_args=(file_size,),
+                disable_notification=True  # Reduce overhead
             )
 
             if not uploaded:
@@ -39,7 +45,7 @@ class UploadHandler:
 
             # Create post text
             post_text = self._create_formatted_post()
-            
+
             # Create button for download
             keyboard = [[InlineKeyboardButton("📥 Download", url=share_link)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -47,27 +53,30 @@ class UploadHandler:
             # Send to main channel
             try:
                 cover_url = self.post_data.get('cover_url')
-                
+
                 if cover_url and isinstance(cover_url, str) and cover_url.startswith('http'):
                     await self.client.send_photo(
-                        MAIN_CHANNEL,
+                        chat_id=MAIN_CHANNEL,
                         photo=cover_url,
                         caption=post_text,
-                        reply_markup=reply_markup
+                        reply_markup=reply_markup,
+                        disable_notification=True
                     )
                 else:
                     await self.client.send_message(
-                        MAIN_CHANNEL,
-                        post_text,
+                        chat_id=MAIN_CHANNEL,
+                        text=post_text,
                         disable_web_page_preview=True,
-                        reply_markup=reply_markup
+                        reply_markup=reply_markup,
+                        disable_notification=True
                     )
 
-                # Clean up
-                try:
-                    os.remove(file_path)
-                except Exception as e:
-                    logger.warning(f"Failed to remove file: {e}")
+                # Clean up file after successful upload
+                if os.path.exists(file_path):
+                    try:
+                        os.remove(file_path)
+                    except Exception as e:
+                        logger.warning(f"Failed to remove file: {e}")
 
                 await self.status_msg.edit("✅ Upload complete!")
                 if self.channel_msg:
@@ -90,20 +99,14 @@ class UploadHandler:
     def _create_formatted_post(self):
         """Creates the exact post format required"""
         try:
-            # Get all required fields
             title = self.post_data.get('title', '')
             rating = self.post_data.get('rating', '')
             episode = self.post_data.get('episode', '')
             genres = self.post_data.get('genres', '')
             description = self.post_data.get('description', '')
 
-            # Create post parts
-            post_parts = []
+            post_parts = [f"☗   {title}\n"]
             
-            # Title with the exact format
-            post_parts.append(f"☗   {title}\n")
-            
-            # Add other fields only if they exist
             if rating:
                 post_parts.append(f"⦿   Ratings: {rating}")
             if episode:
@@ -111,7 +114,6 @@ class UploadHandler:
             if genres:
                 post_parts.append(f"⦿   Genres: {genres}")
             
-            # Add synopsis with spacing
             if description:
                 post_parts.append("")  # Empty line before synopsis
                 post_parts.append(f"◆   Synopsis: {description}")
