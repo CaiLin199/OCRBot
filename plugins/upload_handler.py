@@ -35,7 +35,7 @@ class UploadHandler:
             if not uploaded:
                 raise Exception("Upload failed: No response from Telegram")
 
-            # Generate shareable link (passing only client and uploaded message)
+            # Generate shareable link
             share_link = await generate_link(self.client, uploaded)
             if not share_link:
                 raise Exception("Failed to generate share link")
@@ -98,29 +98,27 @@ class UploadHandler:
             if not self.post_data or not isinstance(self.post_data, dict) or 'data' not in self.post_data:
                 return "☗ File Upload"
 
-            data = self.post_data['data']
             post_components = []
+            data = self.post_data.get('data', {})
 
-            # Title
+            # Title with correct spacing
             title = data.get('title', 'No Title')
-            post_components.append(f"☗   {title}\n")
+            post_components.append(f"☗   {title}\n")  # Extra newline after title
 
-            # Ratings
+            # Main info with bullet points
             if rating := data.get('rating'):
                 post_components.append(f"⦿   Ratings: {rating}")
-
-            # Episode
+            
             if episode := data.get('episode'):
                 post_components.append(f"⦿   Episode: {episode}")
 
-            # Genres
             if genres := data.get('genres'):
                 post_components.append(f"⦿   Genres: {genres}")
 
-            # Add empty line before synopsis
+            # Empty line before synopsis
             post_components.append("")
 
-            # Synopsis/Description
+            # Synopsis with diamond bullet
             if description := data.get('description'):
                 post_components.append(f"◆   Synopsis: {description}")
 
