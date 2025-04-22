@@ -13,12 +13,9 @@ async def generate_link(client, file_message):
     """Generate shareable link for a file message."""
     try:
         msg_id = file_message.id
-        base64_string = await encode(f"get-{msg_id * abs(DB_CHANNEL)}")
+        base64_string = await encode(f"get-{msg_id * abs(CHANNEL_ID)}")
         link = f"https://t.me/HeavenlySubsBot?start={base64_string}"
-        reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔁 Share URL", url=f'https://telegram.me/share/url?url={link}')]
-        ])
-        return link, reply_markup
+        return link
     except Exception as e:
         print(f"Error generating link: {e}")
-        return None, None
+        return None
