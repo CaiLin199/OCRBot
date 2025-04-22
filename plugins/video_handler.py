@@ -48,7 +48,7 @@ class VideoHandler:
                 download = aria2.add_uris([download_url])
                 file_path = None
                 last_update_time = 0
-                update_interval = 5  # Update every 2 seconds
+                update_interval = 3  # Update every 3 seconds
 
                 while not download.is_complete:
                     download.update()
@@ -61,17 +61,25 @@ class VideoHandler:
                             percentage = (current * 100) / total
                             speed = download.download_speed
                             
+                            # Format size
+                            downloaded = current / (1024 * 1024)  # Convert to MB
+                            total_size = total / (1024 * 1024)    # Convert to MB
+                            
                             # Format speed
                             if speed > 1024*1024:  # MB/s
                                 speed_text = f"{speed/(1024*1024):.1f} MB/s"
                             else:  # KB/s
                                 speed_text = f"{speed/1024:.1f} KB/s"
                             
-                            status_text = f"📥 Downloading... {percentage:.1f}%\n💫 Speed: {speed_text}"
+                            status_text = (
+                                f"📥 Downloading... {percentage:.1f}%\n"
+                                f"⚡️ Speed: {speed_text}\n"
+                                f"📊 Size: {downloaded:.1f}MB / {total_size:.1f}MB"
+                            )
                             await progress.update_progress(current, total, status_text)
                             last_update_time = current_time
                     
-                    await asyncio.sleep(0.5)  # Reduced sleep time for better responsiveness
+                    await asyncio.sleep(0.1)  # Reduced sleep time for better responsiveness
 
                 if download.is_complete:
                     file_path = download.files[0].path
@@ -108,7 +116,7 @@ class VideoHandler:
                             reply_markup = InlineKeyboardMarkup(keyboard)
                             
                             try:
-                                if post_data.get('cover_url'):
+                                if post_data and post_data.get('cover_url'):
                                     # Send post with cover image
                                     await client.send_photo(
                                         chat_id=MAIN_CHANNEL,
@@ -120,19 +128,20 @@ class VideoHandler:
                                     # Send post without cover image
                                     await client.send_message(
                                         chat_id=MAIN_CHANNEL,
-                                        text=post_handler.format_post(post_data),
+                                        text=post_handler.format_post(post_data) if post_data else "✅ File Uploaded",
                                         reply_markup=reply_markup
                                     )
                             except Exception as e:
                                 logger.error(f"Failed to send post: {e}")
                                 await client.send_message(
                                     chat_id=MAIN_CHANNEL,
-                                    text=post_handler.format_post(post_data),
+                                    text=post_handler.format_post(post_data) if post_data else "✅ File Uploaded",
                                     reply_markup=reply_markup
                                 )
                     
                     # Clear post data after successful upload
-                    post_handler.clear_post_data(user_id)
+                    if user_id:
+                        post_handler.clear_post_data(user_id)
                     
                     # Clean up downloaded file
                     try:
@@ -165,4 +174,65 @@ class VideoHandler:
             if 'channel_msg' in locals():
                 await channel_msg.delete()
 
-# Command handlers remain the same
+# Create handler instance
+video_handler = VideoHandler()
+
+# Command handlers
+@Bot.on_message(filters.command(['start', 'help']))
+async def start_command(client, message):
+    """Handle start and help commands"""
+    if message.from_user.id != OWNER_ID:
+        return await message.reply("Sorry, you are not authorized to use this bot.")
+    
+    help_text = """
+🤖 **Available Commands**:
+
+/start - Show this help message
+/help - Show this help message
+/post - Create a new post with metadata
+/ddl <url> - Download and process a direct link
+
+**Post Creation Process**:
+1. Use /post to start
+2. Fill in the required metadata
+3. Add the direct download link
+4. Click CREATE POST
+"""
+    await message.reply(help_text)
+
+@Bot.on_message(filters.command('ddl') & filters.user(OWNER_ID))
+async def handle_ddl(client, message):
+    """Handle direct download link command"""
+    await video_handler._handle_ddl(client, message)
+
+@Bot.on_message(filters.command('post') & filters.user(OWNER_ID))
+async def handle_post(client, message):
+    """Handle post creation command"""
+    await post_handler.handle_post_command(client, message)
+
+@Bot.on_callback_query()
+async def handle_callbacks(client, callback_query):
+    """Handle callback queries"""
+    try:
+        if callback_query.data == "create_post":
+            post_data = post_handler.get_post_data(callback_query.from_user.id)
+            if not post_data.get('ddl'):
+                await callback_query.answer("Direct Link is required!", show_alert=True)
+                return
+            
+            await video_handler._handle_ddl(
+                client,
+                callback_query.message,
+                url=post_data['ddl'],
+                user_id=callback_query.from_user.id
+            )
+        else:
+            await post_handler.handle_callback(client, callback_query)
+    except Exception as e:
+        logger.error(f"Callback error: {e}")
+        await callback_query.answer("An error occurred", show_alert=True)
+
+@Bot.on_message(filters.private & filters.user(OWNER_ID))
+async def handle_post_input(client, message):
+    """Handle post input in private chat"""
+    await post_handler.handle_input(client, message)
