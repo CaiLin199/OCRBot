@@ -105,7 +105,7 @@ class VideoHandler:
                     if msg_id:
                         # Generate shareable link
                         from .link_generation import generate_link
-                        share_link = await generate_link(client, MAIN_CHANNEL, msg_id)
+                        share_link = await generate_link(client, CHANNEL_ID, msg_id)
                         
                         if share_link:
                             # Send success message to user
