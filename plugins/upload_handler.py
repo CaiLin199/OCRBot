@@ -40,6 +40,8 @@ class UploadHandler:
 
             # Generate shareable link
             share_link = await generate_link(self.client, uploaded)
+            if not share_link:
+                raise Exception("Failed to generate share link")
             
             # Create post text
             post_text = await self._create_post_text(share_link)
@@ -49,22 +51,29 @@ class UploadHandler:
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             # Send to main channel
-            if self.post_data and isinstance(self.post_data, dict) and 'data' in self.post_data and 'cover_url' in self.post_data['data']:
-                # Send with cover photo
-                main_post = await self.client.send_photo(
-                    MAIN_CHANNEL,
-                    photo=self.post_data['data']['cover_url'],
-                    caption=post_text,
-                    reply_markup=reply_markup
-                )
-            else:
-                # Send without cover
-                main_post = await self.client.send_message(
-                    MAIN_CHANNEL,
-                    post_text,
-                    disable_web_page_preview=True,
-                    reply_markup=reply_markup
-                )
+            try:
+                if (self.post_data and 
+                    isinstance(self.post_data, dict) and 
+                    'data' in self.post_data and 
+                    'cover_url' in self.post_data['data']):
+                    # Send with cover photo
+                    main_post = await self.client.send_photo(
+                        MAIN_CHANNEL,
+                        photo=self.post_data['data']['cover_url'],
+                        caption=post_text,
+                        reply_markup=reply_markup
+                    )
+                else:
+                    # Send without cover
+                    main_post = await self.client.send_message(
+                        MAIN_CHANNEL,
+                        post_text,
+                        disable_web_page_preview=True,
+                        reply_markup=reply_markup
+                    )
+            except Exception as e:
+                logger.error(f"Failed to send post: {e}")
+                raise Exception(f"Failed to send post: {str(e)}")
 
             # Clean up
             try:
@@ -73,7 +82,8 @@ class UploadHandler:
                 logger.error(f"Failed to remove file: {e}")
 
             await self.status_msg.edit("✅ Upload complete!")
-            await self.channel_msg.delete()
+            if self.channel_msg:
+                await self.channel_msg.delete()
 
             return msg_id
 
@@ -81,7 +91,8 @@ class UploadHandler:
             error_msg = str(e)
             logger.error(f"Upload failed: {error_msg}")
             await self.status_msg.edit(f"❌ Upload failed: {error_msg}")
-            await self.channel_msg.delete()
+            if self.channel_msg:
+                await self.channel_msg.delete()
             return None
 
     async def _create_post_text(self, share_link):
@@ -123,6 +134,12 @@ class UploadHandler:
                     synopsis = synopsis[:97] + "..."
                 post_components.append(f"◆   Synopsis: {synopsis}")
 
+            # Add empty line before download link
+            post_components.append("")
+            
+            # Add download text
+            post_components.append("📥 Download")
+
             # Join components
             post_text = "\n".join(post_components)
             
@@ -130,5 +147,4 @@ class UploadHandler:
 
         except Exception as e:
             logger.error(f"Failed to create post text: {e}")
-            # Return a basic format instead of raising the error
-            return f"☗ File Upload\n\n📥 Download: {share_link}"
+            return f"☗ File Upload\n\n📥 Download"
