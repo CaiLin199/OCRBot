@@ -39,12 +39,14 @@ class UploadHandler:
             share_link = await generate_link(self.client, uploaded)
             if not share_link:
                 raise Exception("Failed to generate share link")
-            
-            # Log post_data for debugging
-            logger.info(f"Post data: {self.post_data}")
-            
-            # Create post text
-            post_text = await self._create_post_text()
+
+            post_text = f"""☗   {self.post_data['title']}
+
+⦿   Ratings: {self.post_data['rating']}
+⦿   Episode: {self.post_data['episode']}
+⦿   Genres: {self.post_data['genres']}
+
+◆   Synopsis: {self.post_data['description']}"""
             
             # Create button for download
             keyboard = [[InlineKeyboardButton("📥 Download", url=share_link)]]
@@ -52,16 +54,11 @@ class UploadHandler:
 
             # Send to main channel
             try:
-                # Check post_data structure correctly
-                has_cover = (self.post_data and 
-                           isinstance(self.post_data, dict) and 
-                           self.post_data.get(self.user_id, {}).get('data', {}).get('cover_url'))
-                
-                if has_cover:
+                if 'cover_url' in self.post_data:
                     # Send with cover photo
                     main_post = await self.client.send_photo(
                         MAIN_CHANNEL,
-                        photo=self.post_data[self.user_id]['data']['cover_url'],
+                        photo=self.post_data['cover_url'],
                         caption=post_text,
                         reply_markup=reply_markup
                     )
@@ -96,49 +93,3 @@ class UploadHandler:
             if self.channel_msg:
                 await self.channel_msg.delete()
             return None
-
-    async def _create_post_text(self):
-        """Create the post text with exact formatting"""
-        try:
-            # Log the post data structure
-            logger.info(f"Creating post text with data: {self.post_data}")
-
-            if not self.post_data or not isinstance(self.post_data, dict):
-                return "☗ File Upload"
-
-            # Get the correct data structure
-            user_data = self.post_data.get(self.user_id, {}).get('data', {})
-            
-            if not user_data:
-                return "☗ File Upload"
-
-            post_components = []
-
-            # Title with correct spacing
-            title = user_data.get('title', 'No Title')
-            post_components.append(f"☗   {title}\n")  # Extra newline after title
-
-            # Main info with bullet points
-            if rating := user_data.get('rating'):
-                post_components.append(f"⦿   Ratings: {rating}")
-            
-            if episode := user_data.get('episode'):
-                post_components.append(f"⦿   Episode: {episode}")
-
-            if genres := user_data.get('genres'):
-                post_components.append(f"⦿   Genres: {genres}")
-
-            # Empty line before synopsis
-            post_components.append("")
-
-            # Synopsis with diamond bullet
-            if description := user_data.get('description'):
-                post_components.append(f"◆   Synopsis: {description}")
-
-            # Join all components
-            return "\n".join(post_components)
-
-        except Exception as e:
-            logger.error(f"Failed to create post text: {e}")
-            logger.error(f"Post data was: {self.post_data}")
-            return "☗ File Upload"
