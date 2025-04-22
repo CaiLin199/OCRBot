@@ -76,7 +76,7 @@ class VideoHandler:
                                 f"⚡️ Speed: {speed_text}\n"
                                 f"📊 Size: {downloaded:.1f}MB / {total_size:.1f}MB"
                             )
-                            await progress.update_progress(current, total, status_text)
+                            await progress.update_progress(current, total)
                             last_update_time = current_time
                     
                     await asyncio.sleep(0.1)  # Reduced sleep time for better responsiveness
