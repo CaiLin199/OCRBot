@@ -40,25 +40,29 @@ class UploadHandler:
             if not share_link:
                 raise Exception("Failed to generate share link")
 
-            post_text = f"""☗   {self.post_data['title']}
+            # Extract the necessary information from post_data
+            try:
+                # Get data from the nested structure
+                data = self.post_data.get(str(self.user_id), {}).get('data', {})
+                
+                # Create post text with proper formatting and error handling
+                post_text = self._format_post_text(data)
+            except Exception as e:
+                logger.error(f"Error formatting post text: {e}")
+                raise Exception("Failed to format post text")
 
-⦿   Ratings: {self.post_data['rating']}
-⦿   Episode: {self.post_data['episode']}
-⦿   Genres: {self.post_data['genres']}
-
-◆   Synopsis: {self.post_data['description']}"""
-            
             # Create button for download
             keyboard = [[InlineKeyboardButton("📥 Download", url=share_link)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
             # Send to main channel
             try:
-                if 'cover_url' in self.post_data:
+                cover_url = data.get('cover_url')
+                if cover_url:
                     # Send with cover photo
                     main_post = await self.client.send_photo(
                         MAIN_CHANNEL,
-                        photo=self.post_data['cover_url'],
+                        photo=cover_url,
                         caption=post_text,
                         reply_markup=reply_markup
                     )
@@ -93,3 +97,28 @@ class UploadHandler:
             if self.channel_msg:
                 await self.channel_msg.delete()
             return None
+
+    def _format_post_text(self, data):
+        """Format the post text with proper error handling"""
+        try:
+            # Default values in case any field is missing
+            title = data.get('title', 'Unknown Title')
+            rating = data.get('rating', 'N/A')
+            episode = data.get('episode', 'N/A')
+            genres = data.get('genres', 'N/A')
+            description = data.get('description', 'No synopsis available.')
+
+            # Format the post text with proper spacing
+            post_text = f"""☗   {title}
+
+⦿   Ratings: {rating}
+⦿   Episode: {episode}
+⦿   Genres: {genres}
+
+◆   Synopsis: {description}"""
+            
+            return post_text
+        except Exception as e:
+            logger.error(f"Error in _format_post_text: {e}")
+            # Return a basic format if something goes wrong
+            return "☗   Upload Complete"
