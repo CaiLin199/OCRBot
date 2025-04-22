@@ -21,59 +21,40 @@ class UploadHandler:
             return None
 
         try:
-            # Handle thumbnail
-            thumb = None
-            if os.path.exists(THUMBNAIL):
-                try:
-                    thumb = await self.client.upload_media(THUMBNAIL)
-                except Exception as e:
-                    logger.warning(f"Failed to upload thumbnail: {e}")
-
             # Upload with progress
             uploaded = await self.client.send_document(
                 CHANNEL_ID,
                 file_path,
                 force_document=True,
-                thumb=thumb,
                 progress=self.progress.update_progress
             )
 
             if not uploaded:
                 raise Exception("Upload failed: No response from Telegram")
 
-            # Generate shareable link - Fixed the argument count issue
-            share_link = await generate_link(self.client, uploaded)
+            # Generate shareable link
+            share_link = await generate_link(uploaded)
             if not share_link:
                 raise Exception("Failed to generate share link")
 
-            # Create post text with safe fallbacks
-            post_text = self._create_safe_post()
+            # Create post text
+            post_text = self._create_formatted_post()
             
             # Create button for download
             keyboard = [[InlineKeyboardButton("📥 Download", url=share_link)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # Send to main channel with enhanced error handling
+            # Send to main channel
             try:
                 cover_url = self.post_data.get('cover_url')
                 
                 if cover_url and isinstance(cover_url, str) and cover_url.startswith('http'):
-                    try:
-                        await self.client.send_photo(
-                            MAIN_CHANNEL,
-                            photo=cover_url,
-                            caption=post_text,
-                            reply_markup=reply_markup
-                        )
-                    except Exception as e:
-                        logger.error(f"Failed to send with photo: {e}")
-                        # Fallback to message without photo
-                        await self.client.send_message(
-                            MAIN_CHANNEL,
-                            post_text,
-                            disable_web_page_preview=True,
-                            reply_markup=reply_markup
-                        )
+                    await self.client.send_photo(
+                        MAIN_CHANNEL,
+                        photo=cover_url,
+                        caption=post_text,
+                        reply_markup=reply_markup
+                    )
                 else:
                     await self.client.send_message(
                         MAIN_CHANNEL,
@@ -106,39 +87,37 @@ class UploadHandler:
                 await self.channel_msg.delete()
             return None
 
-    def _create_safe_post(self):
-        """Creates the post format with maximum reliability"""
+    def _create_formatted_post(self):
+        """Creates the exact post format required"""
         try:
-            # Safe string extraction
-            def safe_str(key):
-                val = self.post_data.get(key, '')
-                return str(val) if val is not None else ''
+            # Get all required fields
+            title = self.post_data.get('title', '')
+            rating = self.post_data.get('rating', '')
+            episode = self.post_data.get('episode', '')
+            genres = self.post_data.get('genres', '')
+            description = self.post_data.get('description', '')
 
-            title = safe_str('title')
-            if not title:
-                return "☗   Upload Complete"
-
-            post_parts = [f"☗   {title}\n"]
-
-            rating = safe_str('rating')
-            episode = safe_str('episode')
-            genres = safe_str('genres')
-            description = safe_str('description')
-
-            if any([rating, episode, genres]):
-                if rating:
-                    post_parts.append(f"⦿   Ratings: {rating}")
-                if episode:
-                    post_parts.append(f"⦿   Episode: {episode}")
-                if genres:
-                    post_parts.append(f"⦿   Genres: {genres}")
-                
-                if description:
-                    post_parts.append("")
-                    post_parts.append(f"◆   Synopsis: {description}")
+            # Create post parts
+            post_parts = []
+            
+            # Title with the exact format
+            post_parts.append(f"☗   {title}\n")
+            
+            # Add other fields only if they exist
+            if rating:
+                post_parts.append(f"⦿   Ratings: {rating}")
+            if episode:
+                post_parts.append(f"⦿   Episode: {episode}")
+            if genres:
+                post_parts.append(f"⦿   Genres: {genres}")
+            
+            # Add synopsis with spacing
+            if description:
+                post_parts.append("")  # Empty line before synopsis
+                post_parts.append(f"◆   Synopsis: {description}")
 
             return "\n".join(post_parts)
 
         except Exception as e:
             logger.error(f"Error in post creation: {e}")
-            return f"☗   {self.post_data.get('title', 'Upload Complete')}"
+            return f"☗   {self.post_data.get('title', '')}"
