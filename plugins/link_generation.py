@@ -9,7 +9,7 @@ async def encode(string):
     base64_string = base64_bytes.decode('ascii')
     return base64_string
 
-async def generate_link(client, file_message, user_data=None):
+async def generate_link(client, file_message):
     """Generate shareable link for a file message."""
     try:
         msg_id = file_message.id
