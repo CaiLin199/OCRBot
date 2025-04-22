@@ -8,12 +8,12 @@ async def encode(string):
     base64_string = base64_bytes.decode('ascii')
     return base64_string
 
-# Fixed: Removed the unused client parameter
-async def generate_link(message, user_data=None):  # Added optional parameter but we don't use it
+async def generate_link(client, main_channel, message, user_data=None):
     """Generate shareable link for a file message."""
     try:
         msg_id = message.id
-        base64_string = await encode(f"get-{msg_id * abs(CHANNEL_ID)}")
+        # Use MAIN_CHANNEL (or main_channel) in the encoding logic
+        base64_string = await encode(f"get-{msg_id * abs(main_channel)}")
         link = f"https://t.me/HeavenlySubsBot?start={base64_string}"
         return link
     except Exception as e:
