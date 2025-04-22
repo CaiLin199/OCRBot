@@ -35,16 +35,13 @@ class UploadHandler:
             if not uploaded:
                 raise Exception("Upload failed: No response from Telegram")
 
-            # Get message ID
-            msg_id = uploaded.id
-
-            # Generate shareable link
+            # Generate shareable link (passing only client and uploaded message)
             share_link = await generate_link(self.client, uploaded)
             if not share_link:
                 raise Exception("Failed to generate share link")
             
             # Create post text
-            post_text = await self._create_post_text(share_link)
+            post_text = await self._create_post_text()
             
             # Create button for download
             keyboard = [[InlineKeyboardButton("📥 Download", url=share_link)]]
@@ -73,7 +70,7 @@ class UploadHandler:
                     )
             except Exception as e:
                 logger.error(f"Failed to send post: {e}")
-                raise Exception(f"Failed to send post: {str(e)}")
+                raise
 
             # Clean up
             try:
@@ -85,7 +82,7 @@ class UploadHandler:
             if self.channel_msg:
                 await self.channel_msg.delete()
 
-            return msg_id
+            return uploaded.id
 
         except Exception as e:
             error_msg = str(e)
@@ -95,56 +92,41 @@ class UploadHandler:
                 await self.channel_msg.delete()
             return None
 
-    async def _create_post_text(self, share_link):
+    async def _create_post_text(self):
         """Create the post text with exact formatting"""
         try:
             if not self.post_data or not isinstance(self.post_data, dict) or 'data' not in self.post_data:
-                return f"☗ File Upload\n\n📥 Download: {share_link}"
+                return "☗ File Upload"
 
+            data = self.post_data['data']
             post_components = []
-            user_data = self.post_data['data']
 
             # Title
-            title = user_data.get('title', 'No Title')
+            title = data.get('title', 'No Title')
             post_components.append(f"☗   {title}\n")
 
             # Ratings
-            if rating := user_data.get('rating'):
+            if rating := data.get('rating'):
                 post_components.append(f"⦿   Ratings: {rating}")
 
             # Episode
-            if episode := user_data.get('episode'):
+            if episode := data.get('episode'):
                 post_components.append(f"⦿   Episode: {episode}")
 
-            # Quality
-            if quality := user_data.get('quality', '720p'):
-                post_components.append(f"⦿   Quality: {quality}")
-
             # Genres
-            if genres := user_data.get('genres'):
+            if genres := data.get('genres'):
                 post_components.append(f"⦿   Genres: {genres}")
 
             # Add empty line before synopsis
             post_components.append("")
 
-            # Synopsis
-            if synopsis := user_data.get('synopsis'):
-                # Truncate synopsis if too long
-                if len(synopsis) > 100:
-                    synopsis = synopsis[:97] + "..."
-                post_components.append(f"◆   Synopsis: {synopsis}")
+            # Synopsis/Description
+            if description := data.get('description'):
+                post_components.append(f"◆   Synopsis: {description}")
 
-            # Add empty line before download link
-            post_components.append("")
-            
-            # Add download text
-            post_components.append("📥 Download")
-
-            # Join components
-            post_text = "\n".join(post_components)
-            
-            return post_text
+            # Join all components
+            return "\n".join(post_components)
 
         except Exception as e:
             logger.error(f"Failed to create post text: {e}")
-            return f"☗ File Upload\n\n📥 Download"
+            return "☗ File Upload"
