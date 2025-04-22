@@ -1,5 +1,4 @@
 import base64
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from config import CHANNEL_ID
 
 async def encode(string):
@@ -9,10 +8,11 @@ async def encode(string):
     base64_string = base64_bytes.decode('ascii')
     return base64_string
 
-async def generate_link(client, file_message):
+# Fixed: Removed the unused client parameter
+async def generate_link(message, user_data=None):  # Added optional parameter but we don't use it
     """Generate shareable link for a file message."""
     try:
-        msg_id = file_message.id
+        msg_id = message.id
         base64_string = await encode(f"get-{msg_id * abs(CHANNEL_ID)}")
         link = f"https://t.me/HeavenlySubsBot?start={base64_string}"
         return link
