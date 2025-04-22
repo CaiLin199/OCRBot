@@ -4,7 +4,6 @@ from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from config import CHANNEL_ID, MAIN_CHANNEL, THUMBNAIL
 from .shared_data import logger
 from .link_generation import generate_link
-from .progress import Progress
 
 class UploadHandler:
     def __init__(self, client, user_id, status_msg, channel_msg, post_data):
@@ -13,7 +12,14 @@ class UploadHandler:
         self.status_msg = status_msg
         self.channel_msg = channel_msg
         self.post_data = post_data.get(str(user_id), {}).get('data', {}) if isinstance(post_data, dict) else {}
-        self.progress = Progress(client, status_msg, channel_msg, action="📤 Uploading to channel...")
+
+    async def progress(self, current, total):
+        """Simple progress callback"""
+        try:
+            percent = f"{current * 100 / total:.1f}%"
+            await self.status_msg.edit(f"📤 Uploading: {percent}")
+        except:
+            pass
 
     async def upload_file(self, file_path):
         if not os.path.exists(file_path):
@@ -21,83 +27,68 @@ class UploadHandler:
             return None
 
         try:
-            # Get file size for progress tracking
-            file_size = os.path.getsize(file_path)
-
-            # Upload with optimized settings
+            # Basic upload with minimal overhead
             uploaded = await self.client.send_document(
                 chat_id=CHANNEL_ID,
                 document=file_path,
                 force_document=True,
-                file_name=os.path.basename(file_path),  # Preserve original filename
-                progress=self.progress.update_progress,
-                progress_args=(file_size,),
-                disable_notification=True  # Reduce overhead
+                progress=self.progress
             )
 
             if not uploaded:
-                raise Exception("Upload failed: No response from Telegram")
+                raise Exception("Upload failed")
 
-            # Generate shareable link
+            # Simple link generation
             share_link = await generate_link(uploaded)
             if not share_link:
-                raise Exception("Failed to generate share link")
+                raise Exception("Link generation failed")
 
-            # Create post text
-            post_text = self._create_formatted_post()
-
-            # Create button for download
+            # Create simple post
+            post_text = self._create_post()
             keyboard = [[InlineKeyboardButton("📥 Download", url=share_link)]]
             reply_markup = InlineKeyboardMarkup(keyboard)
 
-            # Send to main channel
+            # Post to channel
             try:
                 cover_url = self.post_data.get('cover_url')
-
-                if cover_url and isinstance(cover_url, str) and cover_url.startswith('http'):
+                if cover_url and cover_url.startswith('http'):
                     await self.client.send_photo(
-                        chat_id=MAIN_CHANNEL,
+                        MAIN_CHANNEL,
                         photo=cover_url,
                         caption=post_text,
-                        reply_markup=reply_markup,
-                        disable_notification=True
+                        reply_markup=reply_markup
                     )
                 else:
                     await self.client.send_message(
-                        chat_id=MAIN_CHANNEL,
-                        text=post_text,
-                        disable_web_page_preview=True,
-                        reply_markup=reply_markup,
-                        disable_notification=True
+                        MAIN_CHANNEL,
+                        post_text,
+                        reply_markup=reply_markup
                     )
-
-                # Clean up file after successful upload
-                if os.path.exists(file_path):
-                    try:
-                        os.remove(file_path)
-                    except Exception as e:
-                        logger.warning(f"Failed to remove file: {e}")
-
-                await self.status_msg.edit("✅ Upload complete!")
-                if self.channel_msg:
-                    await self.channel_msg.delete()
-
-                return uploaded.id
-
             except Exception as e:
-                logger.error(f"Failed to send post: {e}")
+                logger.error(f"Post failed: {e}")
                 raise
 
+            # Cleanup
+            try:
+                os.remove(file_path)
+            except:
+                pass
+
+            await self.status_msg.edit("✅ Done!")
+            if self.channel_msg:
+                await self.channel_msg.delete()
+
+            return uploaded.id
+
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"Upload failed: {error_msg}")
-            await self.status_msg.edit(f"❌ Upload failed: {error_msg}")
+            logger.error(f"Upload failed: {e}")
+            await self.status_msg.edit(f"❌ Failed: {str(e)}")
             if self.channel_msg:
                 await self.channel_msg.delete()
             return None
 
-    def _create_formatted_post(self):
-        """Creates the exact post format required"""
+    def _create_post(self):
+        """Simple post creation"""
         try:
             title = self.post_data.get('title', '')
             rating = self.post_data.get('rating', '')
@@ -105,21 +96,19 @@ class UploadHandler:
             genres = self.post_data.get('genres', '')
             description = self.post_data.get('description', '')
 
-            post_parts = [f"☗   {title}\n"]
+            parts = [f"☗   {title}\n"]
             
             if rating:
-                post_parts.append(f"⦿   Ratings: {rating}")
+                parts.append(f"⦿   Ratings: {rating}")
             if episode:
-                post_parts.append(f"⦿   Episode: {episode}")
+                parts.append(f"⦿   Episode: {episode}")
             if genres:
-                post_parts.append(f"⦿   Genres: {genres}")
+                parts.append(f"⦿   Genres: {genres}")
             
             if description:
-                post_parts.append("")  # Empty line before synopsis
-                post_parts.append(f"◆   Synopsis: {description}")
+                parts.append("")
+                parts.append(f"◆   Synopsis: {description}")
 
-            return "\n".join(post_parts)
-
-        except Exception as e:
-            logger.error(f"Error in post creation: {e}")
+            return "\n".join(parts)
+        except:
             return f"☗   {self.post_data.get('title', '')}"
