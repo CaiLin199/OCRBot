@@ -32,18 +32,39 @@ class UploadHandler:
                 progress=self.progress.update_progress
             )
 
+            if not uploaded:
+                raise Exception("Upload failed: No response from Telegram")
+
+            # Get message ID
+            msg_id = uploaded.id
+
             # Generate shareable link
             share_link = await generate_link(self.client, uploaded)
             
             # Create post text
             post_text = await self._create_post_text(share_link)
             
+            # Create button for download
+            keyboard = [[InlineKeyboardButton("📥 Download", url=share_link)]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+
             # Send to main channel
-            main_post = await self.client.send_message(
-                MAIN_CHANNEL,
-                post_text,
-                disable_web_page_preview=True
-            )
+            if self.post_data and isinstance(self.post_data, dict) and 'data' in self.post_data and 'cover_url' in self.post_data['data']:
+                # Send with cover photo
+                main_post = await self.client.send_photo(
+                    MAIN_CHANNEL,
+                    photo=self.post_data['data']['cover_url'],
+                    caption=post_text,
+                    reply_markup=reply_markup
+                )
+            else:
+                # Send without cover
+                main_post = await self.client.send_message(
+                    MAIN_CHANNEL,
+                    post_text,
+                    disable_web_page_preview=True,
+                    reply_markup=reply_markup
+                )
 
             # Clean up
             try:
@@ -54,53 +75,60 @@ class UploadHandler:
             await self.status_msg.edit("✅ Upload complete!")
             await self.channel_msg.delete()
 
-            return True
+            return msg_id
 
         except Exception as e:
             error_msg = str(e)
             logger.error(f"Upload failed: {error_msg}")
-            
-            if "genras" in error_msg:  # Handle specific error
-                error_msg = "Invalid genres format. Please make sure genres are properly formatted."
-            
             await self.status_msg.edit(f"❌ Upload failed: {error_msg}")
             await self.channel_msg.delete()
-            return False
+            return None
 
     async def _create_post_text(self, share_link):
-        """Create the post text with all available information"""
+        """Create the post text with exact formatting"""
         try:
+            if not self.post_data or not isinstance(self.post_data, dict) or 'data' not in self.post_data:
+                return f"☗ File Upload\n\n📥 Download: {share_link}"
+
             post_components = []
+            user_data = self.post_data['data']
 
-            # Add title (required)
-            title = self.post_data[self.user_id]['data'].get('title', 'No Title')
-            post_components.append(f"🎬 **{title}**\n")
+            # Title
+            title = user_data.get('title', 'No Title')
+            post_components.append(f"☗   {title}\n")
 
-            # Add description if available
-            if description := self.post_data[self.user_id]['data'].get('description'):
-                post_components.append(f"📝 **Description:** {description}\n")
+            # Ratings
+            if rating := user_data.get('rating'):
+                post_components.append(f"⦿   Ratings: {rating}")
 
-            # Add rating if available
-            if rating := self.post_data[self.user_id]['data'].get('rating'):
-                post_components.append(f"⭐️ **Rating:** {rating}%\n")
+            # Episode
+            if episode := user_data.get('episode'):
+                post_components.append(f"⦿   Episode: {episode}")
 
-            # Add episode if available
-            if episode := self.post_data[self.user_id]['data'].get('episode'):
-                post_components.append(f"📺 **Episode:** {episode}\n")
+            # Quality
+            if quality := user_data.get('quality', '720p'):
+                post_components.append(f"⦿   Quality: {quality}")
 
-            # Add genres if available
-            if genres := self.post_data[self.user_id]['data'].get('genres'):
-                post_components.append(f"🎭 **Genres:** {genres}\n")
+            # Genres
+            if genres := user_data.get('genres'):
+                post_components.append(f"⦿   Genres: {genres}")
 
-            # Add download link
-            post_components.append(f"📥 **Download:** {share_link}")
+            # Add empty line before synopsis
+            post_components.append("")
 
-            # Join all components and clean empty lines
+            # Synopsis
+            if synopsis := user_data.get('synopsis'):
+                # Truncate synopsis if too long
+                if len(synopsis) > 100:
+                    synopsis = synopsis[:97] + "..."
+                post_components.append(f"◆   Synopsis: {synopsis}")
+
+            # Join components
             post_text = "\n".join(post_components)
-            post_text = "\n".join(line for line in post_text.split('\n') if line.strip())
-
+            
             return post_text
 
         except Exception as e:
             logger.error(f"Failed to create post text: {e}")
-            raise e
+            # Return a basic format instead of raising the error
+            return f"☗ File Upload\n\n📥 Download: {share_link}"
