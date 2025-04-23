@@ -21,3 +21,4 @@ def progressbar(status_msg, total_size_mb, downloaded_mb, speed_mbps):
         f"{downloaded_mb:.2f} MB / {total_size_mb:.2f}\n"
         f"Speed: {speed_mbps:.2f} MB/s\n"
     )
+    return prog_msg
