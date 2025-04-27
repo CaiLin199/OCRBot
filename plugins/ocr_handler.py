@@ -1,6 +1,7 @@
-'''Create a Python Telegram bot that processes a video, extracts the bottom 1/4th of the video frames, and performs OCR on these cropped frames. Generate accurate timestamps for subtitles, format them into a .srt file, and send this subtitle file back to the user. Clean all temporary files during and after the process. Ensure that the bot is efficient, fast, and works within a small memory/CPU space (ideal for hosting on Koyeb).'''
-
-
+"""
+Create a Python Telegram bot that processes a video, extracts the bottom 1/4th of the video frames,
+and performs OCR on these cropped frames. Generate accurate timestamps for subtitles.
+"""
 
 from bot import Bot
 from pyrogram import filters
@@ -10,8 +11,11 @@ import numpy as np
 import pytesseract
 import tempfile
 from PIL import Image
-from config import LOGGER
+from config import LOGGER, LOG_CHANNEL  # Add LOG_CHANNEL to your config.py
 import time
+
+# Initialize logger
+logger = LOGGER(__name__)
 
 document_filter = lambda _, __, msg: bool(msg.document and msg.document.mime_type and 
                                         msg.document.mime_type.startswith('video/'))
@@ -28,6 +32,15 @@ def humanbytes(size):
         n += 1
     return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
 
+async def log_to_channel(client, message):
+    """Helper function to log messages to both file and Telegram channel"""
+    if LOG_CHANNEL:
+        try:
+            await client.send_message(LOG_CHANNEL, message)
+        except Exception as e:
+            logger.error(f"Failed to send message to log channel: {str(e)}")
+    logger.info(message)
+
 @Bot.on_message(filters.create(document_filter) | filters.create(video_filter))
 async def process_video(client, message):
     try:
@@ -42,28 +55,30 @@ async def process_video(client, message):
             try:
                 # Get file size for logging
                 file_size = message.document.file_size if message.document else message.video.file_size
-                await LOGGER.send_message(
+                await log_to_channel(
+                    client,
                     f"Starting download for {message.from_user.first_name} ({message.from_user.id})\n"
                     f"File size: {humanbytes(file_size)}"
                 )
                 
                 await message.download(video_path)
                 download_time = time.time() - start_time
-                await LOGGER.send_message(
+                await log_to_channel(
+                    client,
                     f"Video downloaded in {download_time:.1f}s\n"
                     f"Speed: {humanbytes(file_size/download_time)}/s"
                 )
             except Exception as e:
-                await LOGGER.send_message(f"Download failed: {str(e)}")
+                logger.error(f"Download failed: {str(e)}")
                 return await status_msg.edit("Failed to download video.")
             
             if not os.path.exists(video_path):
-                await LOGGER.send_message("Video download failed: File not found")
+                logger.error("Video download failed: File not found")
                 return await status_msg.edit("Failed to download video.")
             
             # Process video and generate subtitles
             await status_msg.edit("🔍 Processing video and extracting subtitles...")
-            srt_path = await extract_subtitles(video_path, temp_dir, status_msg)
+            srt_path = await extract_subtitles(client, video_path, temp_dir, status_msg)
             
             if os.path.exists(srt_path):
                 await status_msg.edit("📤 Uploading subtitles...")
@@ -73,20 +88,21 @@ async def process_video(client, message):
                 )
                 await status_msg.delete()
                 total_time = time.time() - start_time
-                await LOGGER.send_message(
+                await log_to_channel(
+                    client,
                     f"✅ Process completed for {message.from_user.first_name} ({message.from_user.id})\n"
                     f"Total time: {total_time:.1f}s"
                 )
             else:
                 await status_msg.edit("No subtitles were found in the video.")
-                await LOGGER.send_message(f"No subtitles found in video from {message.from_user.first_name}")
+                logger.warning(f"No subtitles found in video from {message.from_user.first_name}")
                 
     except Exception as e:
         error_msg = f'Error processing video: {str(e)}'
-        await LOGGER.send_message(f"Error: {error_msg}\nUser: {message.from_user.first_name}")
+        logger.error(f"Error: {error_msg}\nUser: {message.from_user.first_name}")
         await message.reply_text(error_msg)
 
-async def extract_subtitles(video_path, temp_dir, status_msg):
+async def extract_subtitles(client, video_path, temp_dir, status_msg):
     subtitles = []
     frames_dir = os.path.join(temp_dir, 'frames')
     os.makedirs(frames_dir, exist_ok=True)
@@ -110,7 +126,8 @@ async def extract_subtitles(video_path, temp_dir, status_msg):
             fps = float(fps_str)
             
         total_frames = int(float(duration) * fps)
-        await LOGGER.send_message(
+        await log_to_channel(
+            client,
             f"📊 Video Info:\n"
             f"Duration: {float(duration):.1f}s\n"
             f"FPS: {fps}\n"
@@ -118,7 +135,7 @@ async def extract_subtitles(video_path, temp_dir, status_msg):
         )
         
     except Exception as e:
-        await LOGGER.send_message(f"Error getting video info: {str(e)}")
+        logger.error(f"Error getting video info: {str(e)}")
         return None
     
     try:
@@ -132,7 +149,7 @@ async def extract_subtitles(video_path, temp_dir, status_msg):
         ])
         
         extract_time = time.time() - extract_start
-        await LOGGER.send_message(f"Frames extracted in {extract_time:.1f}s")
+        await log_to_channel(client, f"Frames extracted in {extract_time:.1f}s")
         
         # Process extracted frames
         total_frames = len([f for f in os.listdir(frames_dir) if f.endswith('.jpg')])
@@ -168,19 +185,21 @@ async def extract_subtitles(video_path, temp_dir, status_msg):
                 
                 # Log progress every 5 seconds
                 if current_time - last_log >= 5:
-                    await LOGGER.send_message(
+                    await log_to_channel(
+                        client,
                         f"OCR Progress: {processed_frames}/{total_frames} frames "
                         f"({(processed_frames/total_frames*100):.1f}%)"
                     )
                     last_log = current_time
                     
             except Exception as e:
-                await LOGGER.send_message(f"Error processing frame {i}: {str(e)}")
+                logger.error(f"Error processing frame {i}: {str(e)}")
             finally:
                 os.remove(frame_path)
         
         ocr_time = time.time() - ocr_start
-        await LOGGER.send_message(
+        await log_to_channel(
+            client,
             f"✅ OCR completed:\n"
             f"Processed {processed_frames} frames in {ocr_time:.1f}s\n"
             f"Found {len(subtitles)} subtitle entries\n"
@@ -188,7 +207,7 @@ async def extract_subtitles(video_path, temp_dir, status_msg):
         )
         
     except Exception as e:
-        await LOGGER.send_message(f"Error in frame extraction/OCR: {str(e)}")
+        logger.error(f"Error in frame extraction/OCR: {str(e)}")
         return None
     
     if not subtitles:
@@ -196,11 +215,11 @@ async def extract_subtitles(video_path, temp_dir, status_msg):
         
     # Generate SRT file
     srt_path = os.path.join(temp_dir, 'subtitles.srt')
-    await generate_srt(subtitles, srt_path)
+    await generate_srt(client, subtitles, srt_path)
     
     return srt_path
 
-async def generate_srt(subtitles, output_path):
+async def generate_srt(client, subtitles, output_path):
     def format_time(seconds):
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
@@ -215,10 +234,10 @@ async def generate_srt(subtitles, output_path):
                 f.write(f"{format_time(subtitle['start_time'])} --> {format_time(subtitle['end_time'])}\n")
                 f.write(f"{subtitle['text']}\n\n")
         
-        await LOGGER.send_message(f"Generated SRT file with {len(subtitles)} entries")
+        await log_to_channel(client, f"Generated SRT file with {len(subtitles)} entries")
         
     except Exception as e:
-        await LOGGER.send_message(f"Error generating SRT file: {str(e)}")
+        logger.error(f"Error generating SRT file: {str(e)}")
         return None
     
     return output_path
