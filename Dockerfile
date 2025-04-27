@@ -20,22 +20,27 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender1 \
     git \
+    && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Set environment variables for optimization
+ENV PYTHONPATH=/app \
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata \
+    OMP_NUM_THREADS=4 \
+    PYTHONUNBUFFERED=1 \
+    PYTESSERACT_CLEANUP=1 \
+    OMP_THREAD_LIMIT=4 \
+    MALLOC_TRIM_THRESHOLD_=100000
 
 # Copy requirements first (better caching)
 COPY requirements.txt .
 
 # Install Python packages
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt \
+    && pip cache purge
 
 # Copy the rest of the application
 COPY . .
-
-# Set Python path and environment variables
-ENV PYTHONPATH=/app
-ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
-ENV OMP_NUM_THREADS=4
-ENV PYTHONUNBUFFERED=1
 
 # Run main.py
 CMD ["python3", "main.py"]
