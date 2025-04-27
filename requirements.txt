@@ -1,12 +1,9 @@
 aiohttp
 TgCrypto
 git+https://github.com/AbidAbdullah1425/pyrogram.git@dev#egg=pyrogram
-numpy>=1.21.0
+numpy
 ffmpeg-python
 opencv-python-headless
 pytesseract>=0.3.8
-Pillow>=9.0.0
+Pillow
 psutil
-easyocr
-python-magic
-scikit-image
