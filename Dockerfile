@@ -8,7 +8,7 @@ ENV TZ=UTC
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install system dependencies including git
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     tesseract-ocr \
@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libxrender1 \
+    git \  # Added git installation
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first (better caching)
@@ -36,5 +37,5 @@ ENV TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
 ENV OMP_NUM_THREADS=4
 ENV PYTHONUNBUFFERED=1
 
-# Change the CMD to run main.py instead of bot module
+# Run main.py
 CMD ["python3", "main.py"]
