@@ -17,7 +17,7 @@ RUN pip3 install -r requirements.txt
 COPY . .
 
 # Make aria2.bash executable
-RUN chmod +x aria2.bash
+#RUN chmod +x aria2.bash
 
 # Start aria2.bash (aria2c) and the bot
-CMD ./aria2.bash & python3 main.py
+CMD python3 main.py
