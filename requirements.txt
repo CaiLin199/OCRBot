@@ -1,9 +1,6 @@
 aiohttp
 TgCrypto
 git+https://github.com/AbidAbdullah1425/pyrogram.git@dev#egg=pyrogram
-opencv-python-headless
 numpy
 pytesseract
-moviepy
 Pillow
-python-magic
