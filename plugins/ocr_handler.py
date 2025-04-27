@@ -2,17 +2,15 @@
 
 
 
-
 from bot import Bot
-from pyrogram import filters  # Add this import
+from pyrogram import filters
 import os
-import cv2
+import subprocess
 import numpy as np
 import pytesseract
 import tempfile
-from moviepy.editor import VideoFileClip
+from PIL import Image
 
-# Document filter using lambda for better control
 document_filter = lambda _, __, msg: bool(msg.document and msg.document.mime_type and 
                                         msg.document.mime_type.startswith('video/'))
 video_filter = lambda _, __, msg: bool(msg.video)
@@ -46,79 +44,59 @@ async def process_video(client, message):
 
 async def extract_subtitles(video_path, temp_dir):
     subtitles = []
-    video = cv2.VideoCapture(video_path)
-    fps = video.get(cv2.CAP_PROP_FPS)
-    total_frames = int(video.get(cv2.CAP_PROP_FRAME_COUNT))
+    frames_dir = os.path.join(temp_dir, 'frames')
+    os.makedirs(frames_dir, exist_ok=True)
     
-    # Process every frame to ensure no subtitles are missed
-    current_frame = 0
+    # Extract video duration and fps using ffprobe
+    probe = subprocess.run([
+        'ffprobe', '-v', 'error',
+        '-select_streams', 'v:0',
+        '-show_entries', 'stream=duration,r_frame_rate',
+        '-of', 'default=noprint_wrappers=1:nokey=1',
+        video_path
+    ], capture_output=True, text=True)
+    
+    duration, fps = probe.stdout.strip().split('\n')
+    fps = eval(fps)  # Evaluate fraction if needed
+    total_frames = int(float(duration) * fps)
+    
+    # Extract frames using ffmpeg (1 frame per second)
+    subprocess.run([
+        'ffmpeg', '-i', video_path,
+        '-vf', f'fps=1,crop=iw:ih/4:0:3*ih/4',  # Extract bottom quarter
+        '-frame_pts', '1',  # Include presentation timestamp
+        os.path.join(frames_dir, 'frame_%d.jpg')
+    ])
+    
+    # Process extracted frames
     last_text = ""
-    text_duration = 0
-    
-    while current_frame < total_frames:
-        video.set(cv2.CAP_PROP_POS_FRAMES, current_frame)
-        ret, frame = video.read()
-        
-        if not ret:
-            break
+    for i in range(total_frames):
+        frame_path = os.path.join(frames_dir, f'frame_{i+1}.jpg')
+        if not os.path.exists(frame_path):
+            continue
             
-        # Extract bottom quarter of the frame precisely
-        height = frame.shape[0]
-        width = frame.shape[1]
-        crop_height = height // 4  # Exact quarter height
-        bottom_quarter = frame[height - crop_height:height, 0:width]
-        
-        # Enhanced preprocessing for better OCR
-        gray = cv2.cvtColor(bottom_quarter, cv2.COLOR_BGR2GRAY)
-        # Apply adaptive thresholding for better text detection
-        binary = cv2.adaptiveThreshold(
-            gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-            cv2.THRESH_BINARY, 11, 2
-        )
-        
-        # Denoise the image
-        denoised = cv2.fastNlMeansDenoising(binary)
-        
-        # Perform OCR with improved configuration
-        text = pytesseract.image_to_string(
-            denoised,
-            lang='eng',
-            config='--psm 6 --oem 3'  # Assume uniform text block
-        ).strip()
-        
-        timestamp = current_frame / fps
-        
-        if text:
-            if text != last_text:  # New text found
-                if last_text:  # Save previous subtitle
-                    subtitles.append({
-                        'start_time': timestamp - text_duration,
-                        'end_time': timestamp,
-                        'text': last_text
-                    })
+        try:
+            # Read frame and perform OCR
+            image = Image.open(frame_path)
+            text = pytesseract.image_to_string(
+                image,
+                lang='eng',
+                config='--psm 6 --oem 3'
+            ).strip()
+            
+            if text and text != last_text:
+                subtitles.append({
+                    'start_time': i,
+                    'end_time': i + 1,
+                    'text': text
+                })
                 last_text = text
-                text_duration = 0
-            text_duration += 1/fps
-        elif last_text:  # Text ended
-            subtitles.append({
-                'start_time': timestamp - text_duration,
-                'end_time': timestamp,
-                'text': last_text
-            })
-            last_text = ""
-            text_duration = 0
-            
-        current_frame += 1
-    
-    # Add final subtitle if exists
-    if last_text:
-        subtitles.append({
-            'start_time': (total_frames/fps) - text_duration,
-            'end_time': total_frames/fps,
-            'text': last_text
-        })
-    
-    video.release()
+                
+        except Exception as e:
+            print(f"Error processing frame {i}: {str(e)}")
+        finally:
+            # Clean up frame
+            os.remove(frame_path)
     
     if not subtitles:
         return None
@@ -134,7 +112,7 @@ async def generate_srt(subtitles, output_path):
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
         seconds = seconds % 60
-        milliseconds = int((seconds - int(seconds)) * 1000)
+        milliseconds = 0
         return f"{hours:02d}:{minutes:02d}:{int(seconds):02d},{milliseconds:03d}"
     
     with open(output_path, 'w', encoding='utf-8') as f:
