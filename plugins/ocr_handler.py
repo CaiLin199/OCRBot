@@ -2,166 +2,165 @@ from bot import Bot
 from pyrogram import filters
 import os
 import cv2
-import numpy as np
 import pytesseract
 import tempfile
 from PIL import Image
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
-import time
 from config import LOGGER
-import re
+import numpy as np
 
 # Initialize logger
 logger = LOGGER(__name__)
 
-# Constants for processing
-BATCH_SIZE = 5
+# Constants for optimization
 MAX_WORKERS = 4
-MIN_TEXT_LENGTH = 3
-OCR_CONFIDENCE_THRESHOLD = 45
-FRAME_INTERVAL = 1  # Extract 1 frame per second
-MAX_DIMENSION = 1280  # Max width/height for processing
+FRAME_BATCH = 30  # Process 30 frames at once for better I/O
+THRESHOLD_AREA = 50  # Minimum text area size
+GPU_ACCELERATION = '-hwaccel cuda -hwaccel_output_format cuda' if cv2.cuda.getCudaEnabledDeviceCount() > 0 else ''
 
-# OCR Configuration
-TESSERACT_CONFIG = '--psm 6 --oem 3 -c tessedit_char_whitelist="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.,!?-():; "\' " --dpi 300'
+# OCR Configuration for better Chinese + English detection
+OCR_CONFIG = '--psm 6 --oem 1 -l chi_sim+eng --dpi 300'
+TESSDATA_DIR = '/usr/share/tesseract-ocr/4.00/tessdata'
+os.environ['TESSDATA_PREFIX'] = TESSDATA_DIR
 
-def format_timedelta(seconds):
+def format_time(seconds):
     """Convert seconds to SRT timestamp format"""
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    seconds = seconds % 60
-    milliseconds = int((seconds % 1) * 1000)
-    return f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d},{milliseconds:03d}"
-
-def optimize_image(image):
-    """Optimize image for better OCR accuracy"""
-    try:
-        # Ensure grayscale
-        if len(image.shape) == 3:
-            image = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-        
-        # Resize if too large
-        height, width = image.shape
-        if width > MAX_DIMENSION or height > MAX_DIMENSION:
-            scale = min(MAX_DIMENSION / width, MAX_DIMENSION / height)
-            new_width = int(width * scale)
-            new_height = int(height * scale)
-            image = cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
-
-        # Apply image enhancements
-        # 1. Denoise
-        denoised = cv2.fastNlMeansDenoising(image, h=10)
-        
-        # 2. Increase contrast using CLAHE
-        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        enhanced = clahe.apply(denoised)
-        
-        # 3. Adaptive thresholding
-        binary = cv2.adaptiveThreshold(
-            enhanced, 
-            255, 
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-            cv2.THRESH_BINARY, 
-            11, 
-            2
-        )
-        
-        # 4. Remove noise
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3,3))
-        cleaned = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel)
-        
-        return cleaned
-    except Exception as e:
-        logger.error(f"Image optimization error: {str(e)}")
-        return image
+    hrs = seconds // 3600
+    mins = (seconds % 3600) // 60
+    secs = seconds % 60
+    ms = int((seconds % 1) * 1000)
+    return f"{int(hrs):02d}:{int(mins):02d}:{int(secs):02d},{ms:03d}"
 
 async def extract_frames(video_path, output_dir):
-    """Extract frames from video with bottom quarter crop"""
+    """Extract frames using optimized FFmpeg settings"""
     try:
-        # FFmpeg command to extract frames and crop bottom quarter
-        ffmpeg_cmd = [
-            'ffmpeg',
-            '-i', video_path,
-            '-vf', f'fps={FRAME_INTERVAL},crop=iw:ih/4:0:3*ih/4,scale=\'min(1280,iw)\':-1',
-            '-frame_pts', '1',
-            '-vsync', '0',
-            '-f', 'image2',
-            os.path.join(output_dir, 'frame_%d.jpg')
+        # Get video duration first
+        probe_cmd = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'format=duration',
+            '-of', 'default=noprint_wrappers=1:nokey=1',
+            video_path
         ]
-
+        
         process = await asyncio.create_subprocess_exec(
-            *ffmpeg_cmd,
+            *probe_cmd,
+            stdout=asyncio.subprocess.PIPE
+        )
+        duration_output = await process.communicate()
+        duration = float(duration_output[0].decode().strip())
+        
+        # Optimized FFmpeg command with GPU acceleration and efficient filtering
+        cmd = [
+            'ffmpeg',
+            *GPU_ACCELERATION.split(),
+            '-i', video_path,
+            '-vf', (
+                'fps=1,'  # 1 frame per second
+                'crop=iw:ih/4:0:3*ih/4,'  # crop bottom quarter
+                'scale=w=trunc(min(iw,1280)/2)*2:h=-2,'  # scale efficiently
+                'eq=contrast=1.2:brightness=0.1'  # enhance contrast
+            ),
+            '-sws_flags', 'lanczos',  # high quality scaling
+            '-start_number', '0',
+            '-vsync', '0',
+            '-f', 'image2pipe',  # pipe output for faster processing
+            '-vcodec', 'ppm',  # use PPM format for faster decoding
+            'pipe:'
+        ]
+        
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
         
-        await process.communicate()
-        frames = [f for f in os.listdir(output_dir) if f.endswith('.jpg')]
+        # Process frames in memory
+        frame_data = await process.communicate()
+        frames = frame_data[0].split(b'P6\n')[1:]  # Split PPM frames
+        
+        # Save frames
+        for i, frame in enumerate(frames):
+            frame_path = os.path.join(output_dir, f'frame_{i}.jpg')
+            with open(frame_path, 'wb') as f:
+                f.write(frame)
+        
         return len(frames)
 
     except Exception as e:
         logger.error(f"Frame extraction error: {str(e)}")
         raise
 
-def clean_text(text):
-    """Clean and normalize extracted text"""
-    # Remove multiple spaces
-    text = re.sub(r'\s+', ' ', text)
-    
-    # Remove lines with just numbers or special characters
-    lines = text.split('\n')
-    cleaned_lines = [line.strip() for line in lines if re.search('[a-zA-Z]', line)]
-    
-    # Join and clean final text
-    text = ' '.join(cleaned_lines)
-    
-    # Remove non-standard characters
-    text = re.sub(r'[^\x00-\x7F]+', '', text)
-    
-    return text.strip()
+def enhance_image(image):
+    """Advanced image enhancement for better OCR"""
+    try:
+        # Convert to float and normalize
+        img_float = image.astype(np.float32) / 255.0
+        
+        # Apply CLAHE
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        enhanced = clahe.apply(cv2.convertScaleAbs(img_float * 255))
+        
+        # Denoise
+        denoised = cv2.fastNlMeansDenoising(enhanced)
+        
+        # Sharpen
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+        sharpened = cv2.filter2D(denoised, -1, kernel)
+        
+        # Binarize using Otsu's method
+        _, binary = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        
+        return binary
+    except Exception as e:
+        logger.error(f"Image enhancement error: {str(e)}")
+        return image
 
-def process_frame_batch(frame_paths):
-    """Process a batch of frames"""
+def process_frame_batch(frames):
+    """Process multiple frames efficiently"""
     results = []
     
-    for frame_path in frame_paths:
+    for frame_path in frames:
         try:
-            # Extract frame number from filename
-            frame_num = int(re.search(r'frame_(\d+)', frame_path).group(1))
+            # Get frame number
+            frame_num = int(frame_path.split('_')[-1].split('.')[0])
             
-            # Read and process image
-            image = cv2.imread(frame_path)
+            # Read image
+            image = cv2.imread(frame_path, cv2.IMREAD_GRAYSCALE)
             if image is None:
                 continue
-
-            # Optimize image
-            processed = optimize_image(image)
             
-            # Convert to PIL Image for better OCR handling
-            pil_image = Image.fromarray(processed)
+            # Enhance image
+            processed = enhance_image(image)
             
-            # Perform OCR
-            ocr_data = pytesseract.image_to_data(
-                pil_image,
-                lang='eng',
-                config=TESSERACT_CONFIG,
-                output_type=pytesseract.Output.DICT
+            # Find text regions (optimize for Chinese characters)
+            mser = cv2.MSER_create(
+                _min_area=100,
+                _max_area=5000,
+                _delta=10
             )
-
-            # Extract text with confidence check
-            text_parts = []
-            for i, conf in enumerate(ocr_data['conf']):
-                if conf > OCR_CONFIDENCE_THRESHOLD:
-                    text = ocr_data['text'][i].strip()
-                    if text:
-                        text_parts.append(text)
-
-            if text_parts:
-                text = clean_text(' '.join(text_parts))
-                if len(text) >= MIN_TEXT_LENGTH:
+            regions, _ = mser.detectRegions(processed)
+            
+            if regions:
+                # Create mask of text regions
+                mask = np.zeros(processed.shape, dtype=np.uint8)
+                for region in regions:
+                    hull = cv2.convexHull(region.reshape(-1, 1, 2))
+                    cv2.drawContours(mask, [hull], -1, (255), -1)
+                
+                # Apply mask
+                text_regions = cv2.bitwise_and(processed, processed, mask=mask)
+                
+                # OCR with confidence check
+                text = pytesseract.image_to_string(
+                    text_regions,
+                    config=OCR_CONFIG
+                ).strip()
+                
+                if text:
                     results.append((frame_num, text))
-
+            
         except Exception as e:
             logger.error(f"Frame processing error: {str(e)}")
         finally:
@@ -169,129 +168,77 @@ def process_frame_batch(frame_paths):
                 os.remove(frame_path)
             except:
                 pass
-
+    
     return results
 
 @Bot.on_message(filters.video | filters.document)
 async def process_video(client, message):
-    """Handle video processing and subtitle generation"""
     try:
-        # Verify video file
-        if not (message.video or (message.document and 
-                message.document.mime_type and 
-                message.document.mime_type.startswith('video/'))):
-            await message.reply_text("❌ Please send a video file.")
-            return
-
-        # Initial status message
-        status_msg = await message.reply_text(
-            "🎥 Starting video processing...\n"
-            "⏳ This might take a few minutes"
-        )
-        
-        start_time = time.time()
+        status_msg = await message.reply_text("🎥 Processing video...")
         
         with tempfile.TemporaryDirectory() as temp_dir:
             # Download video
             video_path = os.path.join(temp_dir, 'video.mp4')
-            await message.download(
-                video_path,
-                progress=lambda c, t: logger.info(f"Download progress: {(c/t)*100:.1f}%")
-            )
-
+            await message.download(video_path)
+            
             # Create frames directory
             frames_dir = os.path.join(temp_dir, 'frames')
-            os.makedirs(frames_dir, exist_ok=True)
-
+            os.makedirs(frames_dir)
+            
             # Extract frames
             await status_msg.edit_text("📥 Extracting frames...")
             total_frames = await extract_frames(video_path, frames_dir)
-
-            if total_frames == 0:
-                await status_msg.edit_text("❌ No frames could be extracted from the video.")
-                return
-
-            # Process frames
-            await status_msg.edit_text("🔍 Processing frames for text...")
             
-            frames = sorted([f for f in os.listdir(frames_dir) if f.endswith('.jpg')])
-            subtitle_data = []
-            processed = 0
-
             # Process frames in batches
+            await status_msg.edit_text("🔍 Processing frames...")
+            all_frames = sorted([os.path.join(frames_dir, f) for f in os.listdir(frames_dir)])
+            
+            all_results = []
             with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                for i in range(0, len(frames), BATCH_SIZE):
-                    batch = frames[i:i + BATCH_SIZE]
-                    batch_paths = [os.path.join(frames_dir, f) for f in batch]
+                for i in range(0, len(all_frames), FRAME_BATCH):
+                    batch = all_frames[i:i + FRAME_BATCH]
+                    results = executor.submit(process_frame_batch, batch).result()
+                    all_results.extend(results)
                     
-                    results = process_frame_batch(batch_paths)
-                    subtitle_data.extend(results)
-                    
-                    processed += len(batch)
-                    if processed % 20 == 0:
+                    # Update progress
+                    if i % (FRAME_BATCH * 2) == 0:
                         await status_msg.edit_text(
-                            f"🔄 Progress: {processed}/{total_frames} frames\n"
-                            f"📝 Found text in {len(subtitle_data)} frames"
+                            f"🔄 Progress: {min(i + FRAME_BATCH, total_frames)}/{total_frames} frames"
                         )
-
-            if not subtitle_data:
-                await status_msg.edit_text(
-                    "❌ No text detected in video.\n"
-                    "Try with a video that has clear, visible text."
-                )
-                return
-
-            # Sort by frame number and merge nearby identical subtitles
-            subtitle_data.sort(key=lambda x: x[0])
-            merged_subtitles = []
-            current = None
-
-            for frame_num, text in subtitle_data:
-                if not current:
-                    current = {'start': frame_num, 'end': frame_num + 1, 'text': text}
-                    continue
-
-                if (frame_num - current['end'] <= 2 and text == current['text']):
-                    current['end'] = frame_num + 1
-                else:
-                    merged_subtitles.append(current)
-                    current = {'start': frame_num, 'end': frame_num + 1, 'text': text}
-
-            if current:
-                merged_subtitles.append(current)
-
-            # Generate SRT file
-            srt_path = os.path.join(temp_dir, 'subtitles.srt')
-            with open(srt_path, 'w', encoding='utf-8') as f:
-                for i, sub in enumerate(merged_subtitles, 1):
-                    start_time = format_timedelta(sub['start'])
-                    end_time = format_timedelta(sub['end'])
+            
+            if all_results:
+                # Merge similar consecutive subtitles
+                merged = []
+                current = None
+                
+                for frame_num, text in sorted(all_results):
+                    if not current:
+                        current = {'start': frame_num, 'end': frame_num + 1, 'text': text}
+                        continue
                     
-                    f.write(f"{i}\n")
-                    f.write(f"{start_time} --> {end_time}\n")
-                    f.write(f"{sub['text']}\n\n")
-
-            # Calculate stats
-            processing_time = time.time() - start_time
-            speed = total_frames / processing_time
-
-            # Send result
-            await message.reply_document(
-                document=srt_path,
-                caption=(
-                    f"✅ Successfully extracted subtitles!\n"
-                    f"📝 Found {len(merged_subtitles)} subtitle sections\n"
-                    f"🎞 Processed {total_frames} frames\n"
-                    f"⏱ Time taken: {processing_time:.1f}s\n"
-                    f"⚡️ Speed: {speed:.1f} frames/s"
-                )
-            )
+                    if frame_num - current['end'] <= 2 and text == current['text']:
+                        current['end'] = frame_num + 1
+                    else:
+                        merged.append(current)
+                        current = {'start': frame_num, 'end': frame_num + 1, 'text': text}
+                
+                if current:
+                    merged.append(current)
+                
+                # Generate SRT
+                srt_path = os.path.join(temp_dir, 'subtitles.srt')
+                with open(srt_path, 'w', encoding='utf-8') as f:
+                    for i, sub in enumerate(merged, 1):
+                        f.write(f"{i}\n")
+                        f.write(f"{format_time(sub['start'])} --> {format_time(sub['end'])}\n")
+                        f.write(f"{sub['text']}\n\n")
+                
+                await message.reply_document(document=srt_path)
+            else:
+                await message.reply_text("No text found")
+            
             await status_msg.delete()
-
+            
     except Exception as e:
-        logger.error(f"Processing failed: {str(e)}")
-        if 'status_msg' in locals():
-            await status_msg.edit_text(
-                f"❌ Error during processing:\n{str(e)}\n"
-                "Please try again with a different video."
-            )
+        logger.error(str(e))
+        await message.reply_text(f"Error: {str(e)}")
