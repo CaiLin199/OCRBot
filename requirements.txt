@@ -6,3 +6,7 @@ ffmpeg-python
 opencv-python
 pytesseract
 Pillow
+psutil
+
+
+
