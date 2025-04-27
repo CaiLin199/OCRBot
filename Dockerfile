@@ -8,13 +8,12 @@ ENV TZ=UTC
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies including git and Chinese language support
+# Install system dependencies including git
 RUN apt-get update && apt-get install -y \
     ffmpeg \
     tesseract-ocr \
     tesseract-ocr-eng \
     tesseract-ocr-chi-sim \
-    tesseract-ocr-chi-tra \
     libtesseract-dev \
     libgl1-mesa-glx \
     libglib2.0-0 \
@@ -22,8 +21,6 @@ RUN apt-get update && apt-get install -y \
     libxext6 \
     libxrender1 \
     git \
-    locales \
-    && locale-gen en_US.UTF-8 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -33,19 +30,13 @@ ENV PYTHONPATH=/app \
     OMP_NUM_THREADS=4 \
     PYTHONUNBUFFERED=1 \
     PYTESSERACT_CLEANUP=1 \
-    OMP_THREAD_LIMIT=4 \
-    MALLOC_TRIM_THRESHOLD_=100000 \
-    LANG=en_US.UTF-8 \
-    LANGUAGE=en_US:en \
-    LC_ALL=en_US.UTF-8 \
-    TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata
+    OMP_THREAD_LIMIT=4
 
 # Copy requirements first (better caching)
 COPY requirements.txt .
 
-# Install Python packages with optimizations
+# Install Python packages
 RUN pip install --no-cache-dir -r requirements.txt \
-    && pip install --no-cache-dir torch torchvision --index-url https://download.pytorch.org/whl/cpu \
     && pip cache purge
 
 # Copy the rest of the application
