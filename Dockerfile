@@ -1,23 +1,22 @@
-# Use a base image with Python
-FROM python:3.8-slim-buster
+FROM python:3.8-slim
 
-# Install git and aria2
-RUN apt-get update && apt-get install -y git aria2
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    tesseract-ocr \
+    libtesseract-dev \
+    ffmpeg \
+    libgl1-mesa-glx \
+    libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
 
-# Set the working directory to /app
 WORKDIR /app
 
-# Copy requirements.txt to the container
-COPY requirements.txt requirements.txt
+# Copy requirements first for better caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Install the Python dependencies
-RUN pip3 install -r requirements.txt
-
-# Copy the rest of the application code
+# Copy the rest of the application
 COPY . .
 
-# Make aria2.bash executable
-#RUN chmod +x aria2.bash
-
-# Start aria2.bash (aria2c) and the bot
-CMD python3 main.py
+# Command to run the bot
+CMD ["python", "main.py"]
