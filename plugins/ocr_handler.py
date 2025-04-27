@@ -4,6 +4,7 @@
 
 
 from bot import Bot
+from pyrogram import filters  # Add this import
 import os
 import cv2
 import numpy as np
