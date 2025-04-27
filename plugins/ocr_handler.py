@@ -11,7 +11,7 @@ import numpy as np
 import pytesseract
 import tempfile
 from PIL import Image
-from config import LOGGER, LOG_CHANNEL  # Add LOG_CHANNEL to your config.py
+from config import LOGGER
 import time
 
 # Initialize logger
@@ -32,15 +32,6 @@ def humanbytes(size):
         n += 1
     return str(round(size, 2)) + " " + Dic_powerN[n] + 'B'
 
-async def log_to_channel(client, message):
-    """Helper function to log messages to both file and Telegram channel"""
-    if LOG_CHANNEL:
-        try:
-            await client.send_message(LOG_CHANNEL, message)
-        except Exception as e:
-            logger.error(f"Failed to send message to log channel: {str(e)}")
-    logger.info(message)
-
 @Bot.on_message(filters.create(document_filter) | filters.create(video_filter))
 async def process_video(client, message):
     try:
@@ -55,16 +46,14 @@ async def process_video(client, message):
             try:
                 # Get file size for logging
                 file_size = message.document.file_size if message.document else message.video.file_size
-                await log_to_channel(
-                    client,
+                logger.info(
                     f"Starting download for {message.from_user.first_name} ({message.from_user.id})\n"
                     f"File size: {humanbytes(file_size)}"
                 )
                 
                 await message.download(video_path)
                 download_time = time.time() - start_time
-                await log_to_channel(
-                    client,
+                logger.info(
                     f"Video downloaded in {download_time:.1f}s\n"
                     f"Speed: {humanbytes(file_size/download_time)}/s"
                 )
@@ -78,9 +67,9 @@ async def process_video(client, message):
             
             # Process video and generate subtitles
             await status_msg.edit("🔍 Processing video and extracting subtitles...")
-            srt_path = await extract_subtitles(client, video_path, temp_dir, status_msg)
+            srt_path = await extract_subtitles(video_path, temp_dir, status_msg)
             
-            if os.path.exists(srt_path):
+            if srt_path and os.path.exists(srt_path):
                 await status_msg.edit("📤 Uploading subtitles...")
                 await message.reply_document(
                     document=srt_path,
@@ -88,8 +77,7 @@ async def process_video(client, message):
                 )
                 await status_msg.delete()
                 total_time = time.time() - start_time
-                await log_to_channel(
-                    client,
+                logger.info(
                     f"✅ Process completed for {message.from_user.first_name} ({message.from_user.id})\n"
                     f"Total time: {total_time:.1f}s"
                 )
@@ -102,67 +90,68 @@ async def process_video(client, message):
         logger.error(f"Error: {error_msg}\nUser: {message.from_user.first_name}")
         await message.reply_text(error_msg)
 
-async def extract_subtitles(client, video_path, temp_dir, status_msg):
+async def extract_subtitles(video_path, temp_dir, status_msg):
     subtitles = []
     frames_dir = os.path.join(temp_dir, 'frames')
     os.makedirs(frames_dir, exist_ok=True)
     
-    # Extract video duration and fps using ffprobe
+    # Get video info
     try:
-        probe = subprocess.run([
-            'ffprobe', '-v', 'error',
-            '-select_streams', 'v:0',
-            '-show_entries', 'stream=duration,r_frame_rate',
+        # Get video duration using ffprobe
+        duration_cmd = subprocess.run([
+            'ffprobe', 
+            '-v', 'error',
+            '-show_entries', 
+            'format=duration',
             '-of', 'default=noprint_wrappers=1:nokey=1',
             video_path
         ], capture_output=True, text=True)
         
-        duration, fps_str = probe.stdout.strip().split('\n')
-        # Handle fractional fps like "25/1"
-        if '/' in fps_str:
-            num, den = map(int, fps_str.split('/'))
-            fps = num / den
-        else:
-            fps = float(fps_str)
-            
-        total_frames = int(float(duration) * fps)
-        await log_to_channel(
-            client,
+        duration = float(duration_cmd.stdout.strip() or '0')
+        
+        # Default to 1 fps for frame extraction
+        fps = 1.0
+        total_frames = int(duration)
+        
+        logger.info(
             f"📊 Video Info:\n"
-            f"Duration: {float(duration):.1f}s\n"
-            f"FPS: {fps}\n"
-            f"Total frames: {total_frames}"
+            f"Duration: {duration:.1f}s\n"
+            f"Extracting at: {fps} fps\n"
+            f"Expected frames: {total_frames}"
         )
         
     except Exception as e:
-        logger.error(f"Error getting video info: {str(e)}")
+        logger.error(f"Error getting video duration: {str(e)}")
         return None
     
     try:
         # Extract frames using ffmpeg (1 frame per second)
         extract_start = time.time()
-        subprocess.run([
+        ffmpeg_cmd = [
             'ffmpeg', '-i', video_path,
-            '-vf', f'fps=1,crop=iw:ih/4:0:3*ih/4',  # Extract bottom quarter
+            '-vf', 'fps=1,crop=iw:ih/4:0:3*ih/4',  # Extract bottom quarter at 1 fps
             '-frame_pts', '1',
             os.path.join(frames_dir, 'frame_%d.jpg')
-        ])
+        ]
         
+        process = subprocess.run(ffmpeg_cmd, capture_output=True, text=True)
+        if process.returncode != 0:
+            logger.error(f"FFmpeg error: {process.stderr}")
+            return None
+            
         extract_time = time.time() - extract_start
-        await log_to_channel(client, f"Frames extracted in {extract_time:.1f}s")
+        logger.info(f"Frames extracted in {extract_time:.1f}s")
         
         # Process extracted frames
-        total_frames = len([f for f in os.listdir(frames_dir) if f.endswith('.jpg')])
+        frame_files = sorted([f for f in os.listdir(frames_dir) if f.endswith('.jpg')])
+        total_frames = len(frame_files)
         processed_frames = 0
         last_text = ""
         ocr_start = time.time()
-        last_log = time.time()
         
-        for i in range(total_frames):
-            frame_path = os.path.join(frames_dir, f'frame_{i+1}.jpg')
-            if not os.path.exists(frame_path):
-                continue
-                
+        for i, frame_file in enumerate(frame_files):
+            frame_path = os.path.join(frames_dir, frame_file)
+            
             try:
                 # Read frame and perform OCR
                 image = Image.open(frame_path)
@@ -181,25 +170,23 @@ async def extract_subtitles(client, video_path, temp_dir, status_msg):
                     last_text = text
                 
                 processed_frames += 1
-                current_time = time.time()
-                
-                # Log progress every 5 seconds
-                if current_time - last_log >= 5:
-                    await log_to_channel(
-                        client,
+                if processed_frames % 10 == 0:  # Log every 10 frames
+                    logger.info(
                         f"OCR Progress: {processed_frames}/{total_frames} frames "
                         f"({(processed_frames/total_frames*100):.1f}%)"
                     )
-                    last_log = current_time
                     
             except Exception as e:
-                logger.error(f"Error processing frame {i}: {str(e)}")
+                logger.error(f"Error processing frame {frame_file}: {str(e)}")
             finally:
-                os.remove(frame_path)
+                # Clean up frame file
+                try:
+                    os.remove(frame_path)
+                except Exception as e:
+                    logger.error(f"Error removing frame {frame_file}: {str(e)}")
         
         ocr_time = time.time() - ocr_start
-        await log_to_channel(
-            client,
+        logger.info(
             f"✅ OCR completed:\n"
             f"Processed {processed_frames} frames in {ocr_time:.1f}s\n"
             f"Found {len(subtitles)} subtitle entries\n"
@@ -215,11 +202,11 @@ async def extract_subtitles(client, video_path, temp_dir, status_msg):
         
     # Generate SRT file
     srt_path = os.path.join(temp_dir, 'subtitles.srt')
-    await generate_srt(client, subtitles, srt_path)
-    
-    return srt_path
+    if await generate_srt(subtitles, srt_path):
+        return srt_path
+    return None
 
-async def generate_srt(client, subtitles, output_path):
+async def generate_srt(subtitles, output_path):
     def format_time(seconds):
         hours = int(seconds // 3600)
         minutes = int((seconds % 3600) // 60)
@@ -234,10 +221,9 @@ async def generate_srt(client, subtitles, output_path):
                 f.write(f"{format_time(subtitle['start_time'])} --> {format_time(subtitle['end_time'])}\n")
                 f.write(f"{subtitle['text']}\n\n")
         
-        await log_to_channel(client, f"Generated SRT file with {len(subtitles)} entries")
+        logger.info(f"Generated SRT file with {len(subtitles)} entries")
+        return True
         
     except Exception as e:
         logger.error(f"Error generating SRT file: {str(e)}")
-        return None
-    
-    return output_path
+        return False
