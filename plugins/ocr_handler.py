@@ -5,20 +5,13 @@ import cv2
 import pytesseract
 import tempfile
 import asyncio
-from concurrent.futures import ThreadPoolExecutor
 from config import LOGGER
-import numpy as np
-from pathlib import Path
 
 # Initialize logger
 logger = LOGGER(__name__)
 
-# Constants
-MAX_WORKERS = 4
-FRAME_BATCH = 30
-
-# OCR Configuration - Simplified for better text detection
-OCR_CONFIG = '--psm 6 --oem 1 -l chi_sim+eng'
+# OCR Configuration - Only Chinese since no English text
+OCR_CONFIG = '--psm 6 --oem 1 -l chi_sim'
 os.environ['TESSDATA_PREFIX'] = '/usr/share/tesseract-ocr/4.00/tessdata'
 
 def format_time(seconds):
@@ -29,81 +22,77 @@ def format_time(seconds):
     ms = int((seconds % 1) * 1000)
     return f"{int(hrs):02d}:{int(mins):02d}:{int(secs):02d},{ms:03d}"
 
-async def extract_frames(video_path, output_dir):
-    """Extract frames using basic settings"""
+async def extract_and_process_frames(video_path, srt_path):
+    """Extract frames and process them one by one"""
     try:
-        logger.info(f"Starting frame extraction from: {video_path}")
-        
-        cmd = [
+        # Get video FPS and duration
+        probe_cmd = [
             'ffmpeg',
             '-i', video_path,
-            '-vf', 'fps=2',  # Extract 2 frames per second
-            '-vsync', '0',
-            '-frame_pts', '1',
-            os.path.join(output_dir, 'frame_%d.jpg')
+            '-v', 'quiet',
+            '-print_format', 'json',
+            '-show_format',
+            '-show_streams'
         ]
         
         process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            *probe_cmd,
+            stdout=asyncio.subprocess.PIPE
         )
+        stdout, _ = await process.communicate()
+        video_info = eval(stdout.decode())
+        duration = float(video_info['format']['duration'])
         
-        await process.communicate()
-        frames = [f for f in os.listdir(output_dir) if f.endswith('.jpg')]
-        logger.info(f"Extracted {len(frames)} frames")
-        return len(frames)
-
-    except Exception as e:
-        logger.error(f"Frame extraction error: {str(e)}")
-        raise
-
-def process_frame_batch(frames):
-    """Process multiple frames efficiently"""
-    results = []
-    
-    for frame_path in frames:
-        try:
-            frame_num = int(frame_path.split('_')[-1].split('.')[0])
+        # Process video frame by frame
+        subs = []
+        current_time = 0
+        
+        while current_time < duration:
+            # Extract single frame
+            frame_path = f'/tmp/frame_{current_time}.jpg'
+            cmd = [
+                'ffmpeg',
+                '-ss', str(current_time),
+                '-i', video_path,
+                '-vframes', '1',
+                '-y',
+                frame_path
+            ]
             
-            # Read image directly
-            image = cv2.imread(frame_path)
-            if image is None:
-                logger.warning(f"Could not read frame: {frame_path}")
-                continue
-
-            # Simple grayscale conversion
-            gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-            
-            # OCR with relaxed confidence
-            ocr_data = pytesseract.image_to_data(
-                gray,
-                config=OCR_CONFIG,
-                output_type=pytesseract.Output.DICT
+            process = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
             )
-
-            # Extract text with lower confidence threshold
-            text_parts = []
-            for i, conf in enumerate(ocr_data['conf']):
-                if conf > 20:  # Lower confidence threshold
-                    text = ocr_data['text'][i].strip()
-                    if text:
-                        text_parts.append(text)
-
-            if text_parts:
-                text = ' '.join(text_parts)
-                logger.info(f"Frame {frame_num}: Found text: {text[:50]}...")
-                results.append((frame_num / 2, text))  # Divide by 2 due to 2 FPS
+            await process.communicate()
             
-        except Exception as e:
-            logger.error(f"Frame processing error: {str(e)}")
-        finally:
-            try:
+            # Process frame if exists
+            if os.path.exists(frame_path):
+                # Read frame and detect text
+                image = cv2.imread(frame_path)
+                if image is not None:
+                    text = pytesseract.image_to_string(image, config=OCR_CONFIG)
+                    if text.strip():
+                        subs.append((current_time, text.strip()))
+                        logger.info(f"Found text at {current_time}s: {text.strip()[:30]}...")
+                
+                # Clean up frame
                 os.remove(frame_path)
-            except:
-                pass
-    
-    return results
+            
+            current_time += 0.5  # Move forward by 0.5 seconds
+            
+        # Write SRT file
+        with open(srt_path, 'w', encoding='utf-8') as f:
+            for i, (time, text) in enumerate(subs, 1):
+                f.write(f"{i}\n")
+                f.write(f"{format_time(time)} --> {format_time(time + 0.5)}\n")
+                f.write(f"{text}\n\n")
+        
+        return len(subs)
+        
+    except Exception as e:
+        logger.error(f"Processing error: {str(e)}")
+        raise
 
 @Bot.on_message(filters.video | filters.document)
 async def process_video(client, message):
@@ -112,46 +101,19 @@ async def process_video(client, message):
         status_msg = await message.reply_text("🎥 Processing video...")
         
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Download video
+            # 1. Download video
             video_path = os.path.join(temp_dir, 'video.mp4')
             await message.download(video_path)
             logger.info("Video downloaded successfully")
             
-            # Create frames directory
-            frames_dir = os.path.join(temp_dir, 'frames')
-            os.makedirs(frames_dir)
-            
-            # Extract frames
-            await status_msg.edit_text("📥 Extracting frames...")
-            total_frames = await extract_frames(video_path, frames_dir)
-            
-            # Process frames
-            await status_msg.edit_text("🔍 Processing frames...")
-            all_frames = sorted([os.path.join(frames_dir, f) for f in os.listdir(frames_dir)])
-            
-            all_results = []
-            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                for i in range(0, len(all_frames), FRAME_BATCH):
-                    batch = all_frames[i:i + FRAME_BATCH]
-                    results = executor.submit(process_frame_batch, batch).result()
-                    all_results.extend(results)
-                    
-                    if i % (FRAME_BATCH * 2) == 0:
-                        await status_msg.edit_text(
-                            f"🔄 Progress: {min(i + FRAME_BATCH, total_frames)}/{total_frames} frames"
-                        )
-            
-            # Generate SRT regardless of results count
+            # 2-6. Extract frames, process and save subtitles
             srt_path = os.path.join(temp_dir, 'subtitles.srt')
-            with open(srt_path, 'w', encoding='utf-8') as f:
-                for i, (time, text) in enumerate(sorted(all_results), 1):
-                    f.write(f"{i}\n")
-                    f.write(f"{format_time(time)} --> {format_time(time + 0.5)}\n")
-                    f.write(f"{text}\n\n")
+            subtitle_count = await extract_and_process_frames(video_path, srt_path)
             
+            # Send result
             await message.reply_document(
                 document=srt_path,
-                caption=f"📝 Extracted {len(all_results)} subtitles from {total_frames} frames"
+                caption=f"📝 Extracted {subtitle_count} subtitles"
             )
             
             await status_msg.delete()
