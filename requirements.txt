@@ -1,7 +1,8 @@
 aiohttp
 TgCrypto
-git+https://github.com/AbidAbdullah1425/pyrogram.git@dev#egg=pyrogram
+#git+https://github.com/AbidAbdullah1425/pyrogram.git@dev#egg=pyrogram
 numpy
+pyrogram
 easyocr
 opencv-python-headless
 glob2
