@@ -40,4 +40,4 @@ RUN mkdir -p /app/downloads /app/temp
 RUN chmod -R 755 /app
 
 # Command to run the bot
-CMD ["python3", "-m", "bot"]
+CMD ["python3", "main.py"]
