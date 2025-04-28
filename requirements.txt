@@ -2,6 +2,7 @@ aiohttp
 TgCrypto
 git+https://github.com/AbidAbdullah1425/pyrogram.git@dev#egg=pyrogram
 numpy
+easyocr
 ffmpeg-python
 opencv-python-headless
-pytesseract
+python-magic
