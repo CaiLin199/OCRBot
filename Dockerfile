@@ -1,46 +1,43 @@
-# Use Python slim image as base
+# Use Python slim image
 FROM python:3.10-slim-bullseye
 
-# Prevent interactive prompts
-ENV DEBIAN_FRONTEND=noninteractive
-ENV TZ=UTC
+# Set environment variables
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONUNBUFFERED=1 \
+    TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata \
+    PYTHONDONTWRITEBYTECODE=1
 
 # Set working directory
 WORKDIR /app
 
-# Install system dependencies including git
-RUN apt-get update && apt-get install -y \
+# Install system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    tesseract-ocr-chi-sim \
-    libtesseract-dev \
-    libgl1-mesa-glx \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender1 \
+    libgl1-mesa-glx \
+    libmagic1 \
     git \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Set environment variables for optimization
-ENV PYTHONPATH=/app \
-    TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata \
-    OMP_NUM_THREADS=4 \
-    PYTHONUNBUFFERED=1 \
-    PYTESSERACT_CLEANUP=1 \
-    OMP_THREAD_LIMIT=4
-
-# Copy requirements first (better caching)
+# Copy requirements first (for better caching)
 COPY requirements.txt .
 
-# Install Python packages
+# Install Python packages with specific configurations for EasyOCR
 RUN pip install --no-cache-dir -r requirements.txt \
-    && pip cache purge
+    && python -c "import easyocr; easyocr.Reader(['ch_sim'])" \
+    && rm -rf ~/.cache/pip
 
 # Copy the rest of the application
 COPY . .
 
-# Run main.py
-CMD ["python3", "main.py"]
+# Create necessary directories
+RUN mkdir -p /app/downloads /app/temp
+
+# Set permissions
+RUN chmod -R 755 /app
+
+# Command to run the bot
+CMD ["python3", "-m", "bot"]
