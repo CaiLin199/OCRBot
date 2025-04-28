@@ -16,7 +16,7 @@ reader = easyocr.Reader(['ch_sim'], gpu=False)  # Chinese Simplified, CPU only
 # Frame Extraction Rate
 FRAME_RATE = 5  # frames per second
 
-@Bot.on_message(filters.video & filters.private)
+@Bot.on_message(filters.video | filters.document)
 async def extract_hardsub(_, message: Message):
     # Download the video
     video_path = await message.download(file_name="video.mp4")
