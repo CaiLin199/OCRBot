@@ -1,32 +1,24 @@
-# Use Python slim image
-FROM python:3.10-slim-bullseye
+
+FROM python:3.10-slim
 
 # Set environment variables
-ENV DEBIAN_FRONTEND=noninteractive \
-    PYTHONUNBUFFERED=1 \
-    TESSDATA_PREFIX=/usr/share/tesseract-ocr/4.00/tessdata \
-    PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies
+# Install minimal required packages in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg \
     libglib2.0-0 \
-    libsm6 \
-    libxext6 \
-    libgl1-mesa-glx \
-    libmagic1 \
-    git \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copy requirements first (for better caching)
-COPY requirements.txt .
-
-# Install Python packages with specific configurations for EasyOCR
-RUN pip install --no-cache-dir -r requirements.txt \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir \
+    pyrogram \
+    tgcrypto \
+    opencv-python-headless \
+    numpy \
+    easyocr \
+    torch --index-url https://download.pytorch.org/whl/cpu \
     && python -c "import easyocr; easyocr.Reader(['ch_sim'])" \
     && rm -rf ~/.cache/pip
 
