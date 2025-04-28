@@ -1,4 +1,5 @@
-FROM python:3.10-slim
+# Use a base image with Python
+FROM python:3.8-slim-buster
 
 ENV PYTHONUNBUFFERED=1
 
