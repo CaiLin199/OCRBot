@@ -1,161 +1,90 @@
-from bot import Bot
-from pyrogram import filters
 import os
-import cv2
-import pytesseract
-import tempfile
 import asyncio
-import json
+import subprocess
+import shutil
+import easyocr
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from logging import getLogger
+from glob import glob
+from bot import Bot
 from config import LOGGER
 
-# Initialize logger
-logger = LOGGER(__name__)
+# OCR Reader Setup
+reader = easyocr.Reader(['ch_sim'], gpu=False)  # Chinese Simplified, CPU only
 
-# OCR Configuration
-OCR_CONFIG = '--psm 6 --oem 1 -l chi_sim'
-os.environ['TESSDATA_PREFIX'] = '/usr/share/tesseract-ocr/4.00/tessdata'
+# Frame Extraction Rate
+FRAME_RATE = 5  # frames per second
 
-def format_time(seconds):
-    """Convert seconds to SRT timestamp format"""
-    hrs = seconds // 3600
-    mins = (seconds % 3600) // 60
-    secs = seconds % 60
-    ms = int((seconds % 1) * 1000)
-    return f"{int(hrs):02d}:{int(mins):02d}:{int(secs):02d},{ms:03d}"
+@Bot.on_message(filters.video & filters.private)
+async def extract_hardsub(_, message: Message):
+    # Download the video
+    video_path = await message.download(file_name="video.mp4")
+    LOGGER.info(f"Downloaded: {video_path}")
 
-async def get_video_duration(video_path):
-    """Get video duration using FFprobe"""
-    try:
-        cmd = [
-            'ffprobe',
-            '-v', 'error',
-            '-show_entries',
-            'format=duration',
-            '-of', 'json',
-            video_path
-        ]
-        
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        
-        stdout, _ = await process.communicate()
-        data = json.loads(stdout)
-        return float(data['format']['duration'])
-    except Exception as e:
-        logger.error(f"Error getting video duration: {e}")
-        return 0
+    # Prepare frames folder
+    if os.path.exists("frames"):
+        shutil.rmtree("frames")
+    os.makedirs("frames", exist_ok=True)
 
-async def extract_and_process_frames(video_path, srt_path, progress_msg):
-    """Extract and process frames one by one"""
-    try:
-        duration = await get_video_duration(video_path)
-        current_time = 0
-        subtitles = []
-        frame_count = 0
-        
-        while current_time < duration:
-            # Extract single frame
-            frame_path = f'/tmp/frame_{int(current_time)}.jpg'
-            cmd = [
-                'ffmpeg',
-                '-ss', str(current_time),
-                '-i', video_path,
-                '-vframes', '1',
-                '-y',
-                frame_path
-            ]
-            
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            await process.communicate()
-            
-            # Update progress every 5 seconds
-            if frame_count % 10 == 0:
-                progress = (current_time / duration) * 100
-                try:
-                    await progress_msg.edit_text(
-                        f"🔄 Processing: {progress:.1f}%\n"
-                        f"⏱ Time: {format_time(current_time)}/{format_time(duration)}\n"
-                        f"📝 Subtitles found: {len(subtitles)}"
-                    )
-                except:
-                    pass
-            
-            # Process frame if exists
-            if os.path.exists(frame_path):
-                try:
-                    # Read and process frame
-                    image = cv2.imread(frame_path)
-                    if image is not None:
-                        # Convert to grayscale
-                        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-                        
-                        # Get text
-                        text = pytesseract.image_to_string(gray, config=OCR_CONFIG).strip()
-                        
-                        # Save if text found
-                        if text:
-                            subtitles.append((current_time, text))
-                            logger.info(f"Found text at {current_time}s: {text[:30]}...")
-                except Exception as e:
-                    logger.error(f"Error processing frame: {e}")
-                finally:
-                    # Clean up frame
-                    try:
-                        os.remove(frame_path)
-                    except:
-                        pass
-            
-            frame_count += 1
-            current_time += 0.5  # Move forward by 0.5 seconds
-        
-        # Write SRT file
-        with open(srt_path, 'w', encoding='utf-8') as f:
-            for i, (time, text) in enumerate(subtitles, 1):
-                f.write(f"{i}\n")
-                f.write(f"{format_time(time)} --> {format_time(time + 0.5)}\n")
-                f.write(f"{text}\n\n")
-        
-        return len(subtitles)
-    
-    except Exception as e:
-        logger.error(f"Processing error: {str(e)}")
-        raise
+    # Extract frames
+    cmd = [
+        "ffmpeg", "-i", video_path,
+        "-vf", f"fps={FRAME_RATE}",
+        "frames/frame_%05d.jpg"
+    ]
+    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    LOGGER.info("Frames extracted.")
 
-@Bot.on_message(filters.video | filters.document)
-async def process_video(client, message):
-    try:
-        logger.info("Starting video processing")
-        status_msg = await message.reply_text("🎥 Processing video...")
-        
-        with tempfile.TemporaryDirectory() as temp_dir:
-            # Download video
-            video_path = os.path.join(temp_dir, 'video.mp4')
-            await message.download(video_path)
-            logger.info("Video downloaded successfully")
-            
-            # Process video
-            srt_path = os.path.join(temp_dir, 'subtitles.srt')
-            subtitle_count = await extract_and_process_frames(video_path, srt_path, status_msg)
-            
-            if subtitle_count > 0:
-                await message.reply_document(
-                    document=srt_path,
-                    caption=f"📝 Extracted {subtitle_count} subtitles"
-                )
-            else:
-                await message.reply_text("No subtitles were found in the video.")
-            
-            await status_msg.delete()
-            logger.info("Video processing completed")
-            
-    except Exception as e:
-        error_msg = f"Processing error: {str(e)}"
-        logger.error(error_msg)
-        await message.reply_text(f"❌ {error_msg}")
+    frames = sorted(glob("frames/*.jpg"))
+    subtitles = []
+    last_text = ""
+    start_time = None
+
+    for idx, frame_path in enumerate(frames):
+        timestamp = idx / FRAME_RATE  # seconds
+        result = reader.readtext(frame_path, detail=0)
+        text = " ".join(result).strip()
+
+        if text != last_text:
+            if last_text and last_text.strip() != "":
+                subtitles.append((start_time, timestamp, last_text))
+            start_time = timestamp
+            last_text = text
+
+        # Remove frame immediately to save RAM
+        os.remove(frame_path)
+
+    # Save last subtitle
+    if last_text and last_text.strip() != "":
+        subtitles.append((start_time, (len(frames) / FRAME_RATE), last_text))
+
+    # Create SRT
+    srt_content = create_srt(subtitles)
+
+    with open("subtitles.srt", "w", encoding="utf-8") as f:
+        f.write(srt_content)
+
+    await message.reply_document("subtitles.srt")
+    LOGGER.info("SRT sent.")
+
+    # Cleanup
+    os.remove(video_path)
+    os.remove("subtitles.srt")
+    shutil.rmtree("frames")
+    LOGGER.info("Cleanup done.")
+
+def create_srt(subtitles):
+    srt_text = ""
+    for idx, (start, end, text) in enumerate(subtitles, 1):
+        srt_text += f"{idx}\n"
+        srt_text += f"{format_timestamp(start)} --> {format_timestamp(end)}\n"
+        srt_text += f"{text}\n\n"
+    return srt_text
+
+def format_timestamp(seconds):
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds - int(seconds)) * 1000)
+    return f"{h:02}:{m:02}:{s:02},{ms:03}"
