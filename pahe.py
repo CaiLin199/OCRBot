@@ -1,39 +1,3 @@
-#!/usr/bin/env python3
-
-# python3 pahe.py "Grand Blue 1-12"
-
-
-import os
-import sys
-            }
-            resp = kwik_session.get(link, headers=kwik_headers)
-            matches = re.findall(r'\("(\S+)",\d+,"(\S+)",(\d+),(\d+)', resp.text)
-            if not matches:
-                return None
-            data, key, load, seperator = matches[0]
-            url, token = self.step_1(data=data, key=key, load=load, seperator=seperator)
-            post_data = {"_token": token}
-            post_headers = kwik_headers.copy()
-            post_headers.update({
-                'referer': link,
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'Origin': 'https://kwik.si'
-            })
-            resp = kwik_session.post(url=url, data=post_data, headers=post_headers, allow_redirects=False)
-            for header_name, header_value in resp.headers.items():
-                if header_name.lower() == 'location':
-                    return header_value
-            return None
-        except Exception as e:
-            logger.debug(f"Error bypassing Kwik link: {e}")
-            return None
-
-    def extract_kwik_link(self, pahe_url: str):
-        try:
-            response = self.session.get(pahe_url)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.text, 'html.parser')
-            for element in soup.find_all(['script', 'iframe']):
                 if element.name == 'script' and element.get('type') == 'text/javascript':
                     match = re.search(r'https://kwik\.si/f/[\w\d]+', element.text)
                 else:
